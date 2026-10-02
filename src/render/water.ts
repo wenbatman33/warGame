@@ -5,6 +5,8 @@ import { WATER_LEVEL } from '../map/heightfield';
 import { GLSL_NOISE } from './terrain';
 
 export const waterTime = { value: 0 };
+/** 天色亮度（白天 1、黃昏 0.85、夜晚 0.38） */
+export const waterTint = { value: 1 };
 
 export function buildWater(hf: Heightfield, heightTex: THREE.Texture, sunDir: THREE.Vector3): THREE.Mesh {
   const geo = new THREE.PlaneGeometry(hf.size, hf.size, 1, 1);
@@ -19,6 +21,7 @@ export function buildWater(hf: Heightfield, heightTex: THREE.Texture, sunDir: TH
         uHeight: { value: heightTex },
         uSize: { value: hf.size },
         uTime: waterTime,
+        uTint: waterTint,
         uSun: { value: sunDir },
         uShallow: { value: new THREE.Color('#62d3cf') },
         uDeep: { value: new THREE.Color('#1d7fae') },
@@ -47,6 +50,7 @@ export function buildWater(hf: Heightfield, heightTex: THREE.Texture, sunDir: TH
       uniform vec3 uShallow;
       uniform vec3 uDeep;
       uniform vec3 uFoam;
+      uniform float uTint;
       varying vec3 vW;
       ${GLSL_NOISE}
       void main() {
@@ -72,6 +76,7 @@ export function buildWater(hf: Heightfield, heightTex: THREE.Texture, sunDir: TH
         float spec = pow(max(dot(nrm, h), 0.0), 90.0) * 0.9;
         float fres = pow(1.0 - max(dot(viewDir, nrm), 0.0), 3.0);
         col += vec3(spec) + fres * vec3(0.18, 0.25, 0.3);
+        col *= uTint;
         float alpha = mix(0.55, 0.92, smoothstep(0.0, 1.2, depth));
         alpha = max(alpha, foam);
         gl_FragColor = vec4(col, alpha * smoothstep(-0.05, 0.08, depth));

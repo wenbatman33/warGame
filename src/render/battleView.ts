@@ -8,6 +8,8 @@ import { grassTuftGeometry, rockGeometry, treeGeometry } from '../models/trees';
 import { SState } from '../sim/soldiers';
 import type { Structure } from '../sim/structures';
 import { TICK, type GameEvent, type World } from '../sim/world';
+import { shipGeometry, SHIP_FIRE } from '../models/ship';
+import { WATER_LEVEL } from '../map/heightfield';
 import { ArrowRenderer } from './arrows';
 import { Banners } from './banners';
 import { Overlays } from './overlays';
@@ -16,7 +18,7 @@ import { SoldierRenderer } from './soldiers';
 import { LIGHT, Stage, type Quality } from './stage';
 import { buildTerrainMesh, heightTexture, trample } from './terrain';
 import { buildVegetation, windTime } from './vegetation';
-import { buildWater, waterTime } from './water';
+import { buildWater, waterTime, waterTint } from './water';
 
 interface StructView {
   st: Structure;
@@ -38,6 +40,7 @@ export class BattleView {
   private teamColors: THREE.Color[];
   private sunDir = new THREE.Vector3();
   private fireLights: THREE.PointLight[] = [];
+  private ships: { mesh: THREE.Mesh; burning: boolean; ph: number }[] = [];
   private trampleData: Uint8Array;
   private trampleTex: THREE.DataTexture;
   private trampleT = 0;
@@ -53,6 +56,7 @@ export class BattleView {
     this.stage = new Stage(container, quality);
     const sc = world.sc;
     this.stage.setTimeOfDay(sc.time ?? 'day');
+    waterTint.value = sc.time === 'night' ? 0.38 : sc.time === 'dusk' ? 0.85 : 1;
     // 火光：最多 4 盞點光源跟著燃燒中的營寨
     for (let k = 0; k < 4; k++) {
       // 永遠開著（只調亮度），避免光源數量變動造成 shader 重編
@@ -131,6 +135,17 @@ export class BattleView {
       this.stage.scene.add(m);
     }
     this.wagonGeo = world.teams.map((t) => propGeometry('wagon', { team: t.color }));
+    // 場景裝飾：戰船
+    const shipMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+    for (const d of sc.decor ?? []) {
+      if (d.kind !== 'ship') continue;
+      const m = new THREE.Mesh(shipGeometry(world.teams[d.team].color, !!d.burnt), shipMat);
+      m.position.set(d.x, WATER_LEVEL - 0.6, d.z);
+      m.rotation.y = d.angle;
+      m.castShadow = m.receiveShadow = true;
+      this.stage.scene.add(m);
+      this.ships.push({ mesh: m, burning: !!d.burning, ph: d.x * 0.1 });
+    }
   }
 
   private onResize = (): void => this.particles.resize(innerHeight);
@@ -260,13 +275,34 @@ export class BattleView {
       }
       this.trampleTex.needsUpdate = true;
     }
+    // 戰船：隨波起伏、燃燒
+    const v3 = new THREE.Vector3();
+    for (const sh of this.ships) {
+      const t = this.rt + sh.ph;
+      sh.mesh.position.y = WATER_LEVEL - 0.6 + Math.sin(t * 0.9) * 0.12;
+      sh.mesh.rotation.z = Math.sin(t * 0.7) * 0.025;
+      if (!sh.burning || paused) continue;
+      sh.mesh.updateMatrixWorld();
+      for (const a of SHIP_FIRE) {
+        if (Math.random() > 0.55) continue;
+        v3.copy(a).applyMatrix4(sh.mesh.matrixWorld);
+        this.particles.emit('fire', v3.x, v3.y, v3.z, 1, 2.5, 1.3);
+        if (Math.random() < 0.3) this.particles.emit('smoke', v3.x, v3.y + 3, v3.z, 1, 3, 1.6);
+        if (Math.random() < 0.1) this.particles.emit('ember', v3.x, v3.y + 1, v3.z, 2, 2);
+      }
+    }
     // 火光
     const burning = this.structs.filter((sv) => sv.st.fire > 0.05).sort((a, b) => b.st.fire - a.st.fire);
     const night = this.world.sc.time === 'night' ? 1.5 : this.world.sc.time === 'dusk' ? 1.2 : 1;
+    const burningShips = this.ships.filter((sh) => sh.burning).sort((a, b) => a.mesh.position.distanceToSquared(this.stage.camera.position) - b.mesh.position.distanceToSquared(this.stage.camera.position));
     this.fireLights.forEach((l, k) => {
       const sv = burning[k];
       if (!sv) {
-        l.intensity = 0;
+        const sh = burningShips[k - burning.length];
+        if (sh) {
+          l.position.set(sh.mesh.position.x, 9, sh.mesh.position.z);
+          l.intensity = (170 + Math.random() * 60) * night;
+        } else l.intensity = 0;
         return;
       }
       const f = sv.st.burnt ? 0.35 : sv.st.fire;

@@ -115,6 +115,16 @@ export const CHIBI: Scenario = {
       ],
     },
   ],
+  // 江上的曹軍連環船：大多已經起火
+  decor: Array.from({ length: 13 }, (_, i) => ({
+    kind: 'ship' as const,
+    x: -270 + i * 45 + (i % 2) * 6,
+    z: 196 + (i % 3) * 7,
+    angle: Math.PI / 2 + (i % 2 ? 0.08 : -0.06),
+    team: 1,
+    burning: i % 4 !== 3,
+    burnt: i % 5 === 1,
+  })),
   stars: [
     { text: '擊潰曹軍', check: (w) => w.winner === 0 },
     { text: '燒毀全部六座營寨', check: (w) => w.structs.filter((s) => s.kind === 'camp' && s.burnt).length >= 6 },

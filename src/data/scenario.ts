@@ -99,6 +99,8 @@ export interface Scenario {
   time?: 'day' | 'dusk' | 'night';
   /** 地圖上的文字標記 */
   labels?: { x: number; z: number; text: string }[];
+  /** 場景裝飾（不影響模擬）：例如赤壁江上燃燒的連環船 */
+  decor?: { kind: 'ship'; x: number; z: number; angle: number; team: number; burning?: boolean; burnt?: boolean }[];
   /** 橋（結構物，可通行） */
   bridges?: { x: number; z: number; angle: number; length: number }[];
 }
