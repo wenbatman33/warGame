@@ -94,8 +94,8 @@ export class World {
 
   /** 套用難度（敵軍攻擊與士氣） */
   setDifficulty(d: 'easy' | 'normal' | 'hard'): void {
-    const atk = d === 'easy' ? 0.82 : d === 'hard' ? 1.12 : 1;
-    const mor = d === 'easy' ? -8 : d === 'hard' ? 6 : 0;
+    const atk = d === 'easy' ? 0.75 : d === 'hard' ? 1.12 : 1;
+    const mor = d === 'easy' ? -12 : d === 'hard' ? 6 : 0;
     for (let t = 0; t < this.teams.length; t++) if (t !== this.player) this.teamAtk[t] = atk;
     for (const r of this.regs) {
       if (r.team === this.player) continue;
@@ -1417,7 +1417,8 @@ export class World {
       const hq = team.hq;
       if (!hq) continue;
       const alive = this.regs.filter((r) => r.team === team.index && !r.gone).reduce((a, r) => a + r.alive, 0);
-      if (this.started && !hq.burnt) hq.stock = Math.max(0, hq.stock - RULES.hqConsumePerSoldier * alive * dt * team.consume);
+      // 沒有任何補給點（糧倉／營寨／水源）的軍隊：劇本不打糧草戰，不消耗本陣存糧
+      if (this.started && !hq.burnt && team.depots.length > 0) hq.stock = Math.max(0, hq.stock - RULES.hqConsumePerSoldier * alive * dt * team.consume);
       const depotsAlive = team.depots.some((d) => d.kind !== 'water' && !d.burnt && d.stock > 0);
       const hasDepots = team.depots.some((d) => d.kind !== 'water');
       const water = team.depots.find((d) => d.kind === 'water');
@@ -1627,10 +1628,11 @@ export class World {
       for (const team of this.teams) {
         if (!team.hq || team.hq.burnt) continue;
         for (const d of team.depots) {
-          if (d.burnt || d.kind !== 'depot' || d.stock < RULES.wagonLoad) continue;
+          // 糧倉與營寨都會派輜重車（營寨存糧少、間隔長一點）
+          if (d.burnt || (d.kind !== 'depot' && d.kind !== 'camp') || d.stock < RULES.wagonLoad) continue;
           d.wagonT -= 1;
           if (d.wagonT > 0) continue;
-          d.wagonT = RULES.wagonInterval * (0.8 + this.rng() * 0.4);
+          d.wagonT = RULES.wagonInterval * (d.kind === 'camp' ? 1.6 : 1) * (0.8 + this.rng() * 0.4);
           const path = this.nav.findPath(d.x, d.z, team.hq.x, team.hq.z);
           d.stock -= RULES.wagonLoad;
           this.wagons.push(new Wagon(this.wagons.length, team.index, d.id, d.x + 8, d.z + 8, path, RULES.wagonLoad));
