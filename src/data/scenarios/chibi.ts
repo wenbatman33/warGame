@@ -99,7 +99,7 @@ export const CHIBI: Scenario = {
       commander: 'caocao',
       hq: { x: 0, z: -228, stock: 420, name: '曹操大營' },
       depots: [{ x: -170, z: -235, stock: 900, main: true, name: '烏林糧營' }, ...campRow.map((x, i) => ({ x, z: 10 + (i % 2) * 18, stock: 300, kind: 'camp' as const, name: `第${'一二三四五六'[i]}營` }))],
-      ai: { plan: 'defend', aggression: 0.5, raid: false, startDelay: 30 },
+      ai: { plan: 'defend', aggression: 0.5, raid: false, startDelay: 30, attackAfter: 150 },
       regiments: [
         { type: 'guard', x: 0, z: -195, general: 'caocao', role: 'reserve', morale: 70 },
         { type: 'guard', x: -150, z: -60, general: 'caoren', morale: 65 },

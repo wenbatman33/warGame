@@ -121,7 +121,7 @@ export const YILING: Scenario = {
       commander: 'liubei',
       hq: { x: 0, z: -205, stock: 400, name: '劉備大營' },
       depots: camps.map(([x, z], i) => ({ x, z, stock: 300, kind: 'camp' as const, name: `蜀營${'一二三四五六七八'[i]}` })),
-      ai: { plan: 'defend', aggression: 0.5, raid: true, startDelay: 40 },
+      ai: { plan: 'defend', aggression: 0.5, raid: true, startDelay: 40, attackAfter: 200 },
       regiments: [
         { type: 'guard', x: 0, z: -170, general: 'liubei', role: 'reserve' },
         { type: 'guard', x: 90, z: -90, general: 'fengxi' },

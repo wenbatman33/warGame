@@ -31,7 +31,13 @@ export class AiCommander {
     this.next = w.t + this.react * (0.8 + w.rng() * 0.4);
     const mine = w.regs.filter((r) => r.team === this.team && !r.gone && !r.routing && r.name !== '逃兵');
     const enemies = w.regs.filter((r) => r.team !== this.team && !r.gone && r.name !== '逃兵' && w.isVisibleTo(r, this.team));
-    const started = w.t - ((w.flags.startT as number) ?? 0) > (this.plan.startDelay ?? 0);
+    const since = w.t - ((w.flags.startT as number) ?? 0);
+    const started = since > (this.plan.startDelay ?? 0);
+    if (this.plan.attackAfter !== undefined && this.plan.plan !== 'attack' && since > this.plan.attackAfter) {
+      this.plan.plan = 'attack';
+      for (const r of mine) if (r.ai.role === 'hold') r.ai.role = r.ranged ? 'ranged' : r.unit.mounted ? 'flank' : 'line';
+      w.events.push({ k: 'msg', text: `${w.teams[this.team].name}全軍出擊！`, tone: this.team === w.player ? 'good' : 'bad' });
+    }
     for (const r of mine) {
       this.ability(r, enemies);
       switch (r.ai.role) {

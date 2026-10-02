@@ -46,7 +46,7 @@ export interface TeamSpec {
   commander?: GeneralId;
   commanderLoss?: boolean;
   /** AI 戰略 */
-  ai?: { plan: 'attack' | 'defend' | 'hold'; aggression?: number; raid?: boolean; startDelay?: number };
+  ai?: { plan: 'attack' | 'defend' | 'hold'; aggression?: number; raid?: boolean; startDelay?: number; /** 防守方在開戰幾秒後轉為全面進攻 */ attackAfter?: number };
   /** 糧草消耗倍率 */
   consume?: number;
 }
