@@ -5,6 +5,7 @@ import { generateHeightfield } from '../src/map/mapgen';
 import { World } from '../src/sim/world';
 import { AiCommander } from '../src/ai/commander';
 import { GUANDU } from '../src/data/scenarios/guandu';
+import { CAMPAIGN } from '../src/data/scenarios/index';
 
 const RUN = !!(globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BALANCE;
 
@@ -129,4 +130,21 @@ describe.runIf(RUN)('平衡', () => {
     }
     console.log(log.join('\n'));
   });
+  for (const e of CAMPAIGN) {
+    it(`AI 對 AI：${e.name}`, () => {
+      const sc = { ...e.scenario!, teams: e.scenario!.teams.map((t) => ({ ...t, ai: t.ai ? { ...t.ai } : undefined })) as Scenario['teams'] };
+      const w = new World(sc, generateHeightfield(sc.map));
+      const ais = [new AiCommander(w, 0, { plan: 'attack', raid: true, startDelay: 0 }, 'normal'), new AiCommander(w, 1, sc.teams[1].ai ?? { plan: 'attack' }, 'normal')];
+      w.started = true;
+      w.flags.startT = 0;
+      sc.onStart?.(w);
+      for (let k = 0; k < 30 * 600 && !w.over; k++) {
+        w.step();
+        for (const a of ais) a.update();
+        w.events = [];
+      }
+      const burnt = w.structs.filter((s) => s.burnt).map((s) => s.name).join(',');
+      console.log(`${e.name}: t=${w.t.toFixed(0)} 勝方=${w.winner} 陣亡 ${w.teams[0].dead}/${w.teams[0].initialStrength} 對 ${w.teams[1].dead}/${w.teams[1].initialStrength} 士氣 ${w.armyMorale(0).toFixed(0)}/${w.armyMorale(1).toFixed(0)} 焚毀[${burnt}] 糧況 ${w.teams[0].supply}/${w.teams[1].supply}`);
+    });
+  }
 });

@@ -85,6 +85,20 @@ export class World {
   flags: Record<string, number | boolean> = {};
   private triggered = new Set<number>();
   bridges: { x: number; z: number; angle: number; length: number }[] = [];
+  /** 難度：各隊攻擊倍率 */
+  teamAtk = [1, 1];
+
+  /** 套用難度（敵軍攻擊與士氣） */
+  setDifficulty(d: 'easy' | 'normal' | 'hard'): void {
+    const atk = d === 'easy' ? 0.82 : d === 'hard' ? 1.12 : 1;
+    const mor = d === 'easy' ? -8 : d === 'hard' ? 6 : 0;
+    for (let t = 0; t < this.teams.length; t++) if (t !== this.player) this.teamAtk[t] = atk;
+    for (const r of this.regs) {
+      if (r.team === this.player) continue;
+      r.baseMorale = Math.max(30, Math.min(95, r.baseMorale + mor));
+      r.morale = r.baseMorale;
+    }
+  }
   /** 可遊玩區的地面高度中位數（判斷「高地」用） */
   baseHeight = 3;
 
@@ -892,6 +906,7 @@ export class World {
     if (eu.mounted) dmg *= u.vsCav;
     dmg *= this.moraleAtkMul(r) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk / SUPPLY_EFFECTS[this.teams[er.team].supply].def;
     if (this.teams[r.team].panicUntil > t) dmg *= RULES.panicAtk;
+    dmg *= this.teamAtk[r.team];
     if (r.stamina < 30) dmg *= 0.85;
     if (er.routing && u.mounted) dmg *= RULES.pursuitMul;
     // 地形：高低差、涉水（半渡而擊）、森林中的騎兵、己方營寨
@@ -946,7 +961,7 @@ export class World {
       const slopeMul = grade < 0 ? 1 + Math.min(RULES.chargeDownhill, -grade * 3) : 1 - Math.min(RULES.chargeUphill, grade * 3);
       const terrMul = slopeMul * (this.nav.forestAt(s.x[i], s.z[i]) > 0.45 ? RULES.forestCharge : 1) * (this.isWet(s.x[i], s.z[i]) ? 0.5 : 1);
       const mul = (r.formation === 'wedge' ? 1.3 : 1) * r.buffMul('atk', t) * (speed / r.unit.run) * terrMul;
-      let dmg = r.unit.charge * 2.2 * mul * (0.8 + this.rng() * 0.4);
+      let dmg = r.unit.charge * 2.2 * mul * (0.8 + this.rng() * 0.4) * this.teamAtk[r.team];
       if (er.unit.mounted) dmg *= 0.6;
       if (s.general[j]) dmg *= 0.4;
       this.damage(j, dmg, i);
@@ -1019,7 +1034,7 @@ export class World {
     const az = s.z[j] + s.vz[j] * dur + this.gauss() * spread;
     const sy = this.groundY(s.x[i], s.z[i]) + 1.5;
     const ty = this.groundY(ax, az) + 0.9;
-    const p = this.proj.spawn(s.x[i], sy, s.z[i], ax, ty, az, this.t, dur, flat ? Math.max(0.5, dist * 0.02) : 8 + dist * 0.22, s.team[i], rd.dmg * r.buffMul('atk', this.t) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk, rd.ap, r.fireArrows, r.id);
+    const p = this.proj.spawn(s.x[i], sy, s.z[i], ax, ty, az, this.t, dur, flat ? Math.max(0.5, dist * 0.02) : 8 + dist * 0.22, s.team[i], rd.dmg * r.buffMul('atk', this.t) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk * this.teamAtk[r.team], rd.ap, r.fireArrows, r.id);
     if (p >= 0) this.events.push({ k: 'arrow', p });
     s.ammo[i]--;
     s.reload[i] = rd.reload * (0.85 + this.rng() * 0.3);

@@ -57,6 +57,7 @@ export class Battle {
     });
     const hf = generateHeightfield(sc.map);
     this.world = new World(sc, hf);
+    this.world.setDifficulty(opts.difficulty);
     this.view = new BattleView(container, this.world, opts.quality);
     this.cam = new RtsCamera(this.view.stage.camera, hf);
     const c = sc.camera ?? { x: 0, z: 150 };

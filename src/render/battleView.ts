@@ -9,6 +9,7 @@ import { SState } from '../sim/soldiers';
 import type { Structure } from '../sim/structures';
 import { TICK, type GameEvent, type World } from '../sim/world';
 import { ArrowRenderer } from './arrows';
+import { Banners } from './banners';
 import { Overlays } from './overlays';
 import { Particles } from './particles';
 import { SoldierRenderer } from './soldiers';
@@ -30,6 +31,7 @@ export class BattleView {
   readonly overlays: Overlays;
   readonly particles = new Particles();
   private arrows: ArrowRenderer;
+  private banners: Banners;
   private structs: StructView[] = [];
   private wagonMeshes = new Map<number, THREE.Mesh>();
   private wagonGeo: THREE.BufferGeometry[] = [];
@@ -42,7 +44,7 @@ export class BattleView {
   constructor(
     container: HTMLElement,
     readonly world: World,
-    quality: Quality,
+    readonly quality: Quality,
   ) {
     this.stage = new Stage(container, quality);
     const sc = world.sc;
@@ -76,6 +78,8 @@ export class BattleView {
     this.stage.scene.add(this.soldiers.group);
     this.arrows = new ArrowRenderer(4000);
     this.stage.scene.add(this.arrows.mesh);
+    this.banners = new Banners(world);
+    this.stage.scene.add(this.banners.group);
     this.overlays = new Overlays(world);
     this.stage.scene.add(this.overlays.group);
     this.stage.scene.add(this.particles.group);
@@ -195,6 +199,16 @@ export class BattleView {
     }
     sr.end();
     this.arrows.update(w.proj, this.rt);
+    this.banners.update(alpha);
+    // 騎兵奔馳揚塵
+    if (!paused && this.quality !== 'low') {
+      for (const r of w.regs) {
+        if (!r.unit.mounted || r.gone || (r.state !== 'moving' && !r.routing) || !r.run) continue;
+        if (r.team !== w.player && !w.isVisibleTo(r, w.player)) continue;
+        const k = r.members[(Math.random() * r.members.length) | 0];
+        if (Math.random() < 0.5 && k !== undefined && Math.hypot(s.vx[k], s.vz[k]) > 4) this.particles.emit('dust', s.x[k], w.groundY(s.x[k], s.z[k]) + 0.3, s.z[k], 1, 1.5, 1.2);
+      }
+    }
 
     // 火光
     const burning = this.structs.filter((sv) => sv.st.fire > 0.05).sort((a, b) => b.st.fire - a.st.fire);
