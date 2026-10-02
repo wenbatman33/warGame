@@ -1,5 +1,4 @@
 // 一場戰役的總管：模擬步進、渲染、操作、HUD、AI、時間控制（暫停／變速）
-import * as THREE from 'three';
 import { audio } from '../audio/audio';
 import { AiCommander } from '../ai/commander';
 import type { Scenario } from '../data/scenario';
@@ -40,7 +39,8 @@ export class Battle {
   speed = 1;
   phase: 'deploy' | 'battle' | 'end' = 'deploy';
   private acc = 0;
-  private clock = new THREE.Clock();
+  private lastT = performance.now();
+  private portrait = typeof matchMedia !== 'undefined' ? matchMedia('(orientation: portrait) and (max-width: 600px)') : null;
   private running = true;
   /** 慢動作（事件鏡頭） */
   slowmo = 0;
@@ -227,7 +227,11 @@ export class Battle {
 
   private frame(): void {
     if (!this.running) return;
-    const raw = Math.min(0.1, this.clock.getDelta());
+    const now = performance.now();
+    const raw = Math.min(0.1, (now - this.lastT) / 1000);
+    this.lastT = now;
+    // 手機直放時（顯示「請橫放」）自動暫停
+    if (this.portrait?.matches) return;
     const w = this.world;
     let simDt = this.paused ? 0 : raw * this.speed;
     if (this.slowmo > 0) {

@@ -1526,7 +1526,8 @@ export class World {
         }
       } else if (friends > 0 && enemies === 0) {
         st.ignite = Math.max(0, st.ignite - dt / 8);
-        st.fire = Math.max(0, st.fire - dt * 0.02 * Math.min(2, friends / 15)); // 守軍救火只能減緩，燒起來就很難撲滅
+        // 守軍救火：45 人以上能壓過火勢（每秒最多 −0.09，火勢成長 +0.05）
+        st.fire = Math.max(0, st.fire - dt * 0.03 * Math.min(3, friends / 15));
       }
       // 營寨火勢延燒：燃燒中的營寨點燃附近營寨（順風更快）
       if (st.kind === 'camp' && st.fire === 0) {
@@ -1823,6 +1824,7 @@ export class World {
         const li = lose.general!.soldier;
         // 武力差距大 → 一合斬於馬下；否則重傷敗走
         const killed = gw.war - gl.war >= 8 || this.rng() < 0.35;
+        this.events.push({ k: 'duel', a: ga.name, b: gb.name, winner: gw.name, killed, x: s.x[li], z: s.z[li] });
         if (killed) this.damage(li, 1e6, win.general!.soldier);
         else {
           s.hp[li] = Math.max(1, s.hp[li] * 0.35);
@@ -1834,7 +1836,6 @@ export class World {
           else if (!killed) r.morale -= 8;
         }
         s.stun[ia] = s.stun[ib] = 1.5;
-        this.events.push({ k: 'duel', a: ga.name, b: gb.name, winner: gw.name, killed, x: s.x[li], z: s.z[li] });
         return;
       }
     }
@@ -1916,6 +1917,8 @@ export class World {
       case 'firestorm': {
         const fx = x ?? gx;
         const fz = z ?? gz;
+        // 施放距離：武將 160 m 內
+        if (Math.hypot(fx - gx, fz - gz) > 160) return false;
         this.fireArea(fx, fz, 30, r.team);
         break;
       }

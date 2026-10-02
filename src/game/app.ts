@@ -153,7 +153,7 @@ export class App {
   }
 
   // ───────────── 戰鬥 ─────────────
-  startBattle(sc: Scenario, image: string): void {
+  startBattle(sc: Scenario, image: string, difficulty: 'easy' | 'normal' | 'hard' = SETTINGS.difficulty): void {
     audio.music('none');
     const ld = h('div', 'loading', `<div class="lt"><b>${sc.title}</b><span>佈陣中……</span><div class="pb"><i></i></div></div>`);
     ld.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.1), rgba(0,0,0,0.6)), url(${asset(image)})`;
@@ -165,7 +165,7 @@ export class App {
       const params = new URLSearchParams(location.search);
       this.battle = new Battle(this.root, sc, {
         quality: SETTINGS.quality,
-        difficulty: SETTINGS.difficulty,
+        difficulty,
         skipDeploy: params.has('skip'),
         onExit: (r) => this.onBattleExit(sc, image, r),
         onHelp: () => this.showHelp(),
@@ -178,9 +178,12 @@ export class App {
 
   private onBattleExit(sc: Scenario, image: string, r: (BattleResult & { retry?: boolean }) | null): void {
     this.battle = null;
+    // 清掉 ?battle=、&skip 等網址參數，重新整理才不會跳回同一場
+    if (location.search && !new URLSearchParams(location.search).has('dev')) history.replaceState(null, '', location.pathname);
+    else if (location.search) history.replaceState(null, '', `${location.pathname}?dev=1`);
     if (r && !sc.id.startsWith('custom')) recordResult(sc.id, r.stars, r.time, r.win);
     if (r?.retry) {
-      this.startBattle(sc, image);
+      this.startBattle(sc, image, sc.id.startsWith('custom') ? this.custom.difficulty : SETTINGS.difficulty);
       return;
     }
     if (sc.id.startsWith('custom')) this.showCustom();
@@ -217,18 +220,32 @@ export class App {
       box.appendChild(row);
     };
     seg('地形', [['plain', '平原'], ['river', '大河'], ['hills', '丘陵'], ['forest', '密林']], () => o.terrain, (v) => (o.terrain = v));
-    seg('我軍', [['wei', '魏'], ['shu', '蜀'], ['wu', '吳'], ['yuan', '袁']], () => o.player, (v) => (o.player = v));
-    seg('敵軍', [['wei', '魏'], ['shu', '蜀'], ['wu', '吳'], ['yuan', '袁']], () => o.enemy, (v) => (o.enemy = v));
+    // 雙方不能同陣營：選到相同時自動換掉另一方並重畫
+    const fix = (keep: 'player' | 'enemy') => {
+      if (o.player !== o.enemy) return;
+      const alt = (['wei', 'shu', 'wu', 'yuan'] as const).find((f) => f !== o[keep])!;
+      if (keep === 'player') o.enemy = alt;
+      else o.player = alt;
+      this.showCustom();
+    };
+    seg('我軍', [['wei', '魏'], ['shu', '蜀'], ['wu', '吳'], ['yuan', '袁']], () => o.player, (v) => {
+      o.player = v;
+      fix('player');
+    });
+    seg('敵軍', [['wei', '魏'], ['shu', '蜀'], ['wu', '吳'], ['yuan', '袁']], () => o.enemy, (v) => {
+      o.enemy = v;
+      fix('enemy');
+    });
     seg('我軍規模', [[6, '6 團'], [10, '10 團'], [14, '14 團']], () => o.mySize, (v) => (o.mySize = v));
     seg('敵軍規模', [[6, '6 團'], [10, '10 團'], [14, '14 團'], [20, '20 團']], () => o.enemySize, (v) => (o.enemySize = v));
     seg('糧倉', [[true, '有（可燒糧）'], [false, '無']], () => o.depots, (v) => (o.depots = v));
     seg('時間', [['day', '白天'], ['dusk', '黃昏'], ['night', '夜晚']], () => o.time, (v) => (o.time = v));
-    seg('難度', [['easy', '簡單'], ['normal', '普通'], ['hard', '困難']], () => SETTINGS.difficulty, (v) => (SETTINGS.difficulty = v));
+    seg('難度', [['easy', '簡單'], ['normal', '普通'], ['hard', '困難']], () => o.difficulty, (v) => (o.difficulty = v));
     const acts = h('div', 'close');
     acts.style.display = 'flex';
     acts.style.gap = '10px';
     acts.style.justifyContent = 'center';
-    acts.append(btn('↩ 返回', 'gray sm', () => this.showMenu()), btn('⚔ 開戰', 'sm', () => this.startBattle(buildCustomScenario(o), 'battle/battle_custom.jpg')));
+    acts.append(btn('↩ 返回', 'gray sm', () => this.showMenu()), btn('⚔ 開戰', 'sm', () => this.startBattle(buildCustomScenario(o), 'battle/battle_custom.jpg', o.difficulty)));
     box.appendChild(acts);
     m.appendChild(box);
     s.appendChild(m);

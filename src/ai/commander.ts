@@ -304,7 +304,8 @@ export class AiCommander {
     }
     // 火矢：敵方營寨（有糧的）或正在跟我軍肉搏以外的密集敵陣
     if (cmd >= 4) {
-      const st = w.structs.find((s) => s.team !== this.team && !s.burnt && s.kind !== 'water' && s.fire === 0 && mine.some((r) => Math.hypot(r.mx - s.x, r.mz - s.z) < 150));
+      const since = w.t - ((w.flags.startT as number) ?? 0);
+      const st = since < 90 ? undefined : w.structs.find((s) => s.team !== this.team && !s.burnt && s.kind !== 'water' && s.kind !== 'hq' && s.fire === 0 && mine.some((r) => Math.hypot(r.mx - s.x, r.mz - s.z) < 130));
       if (st) {
         w.useStratagem(this.team, 'firearrows', st.x, st.z);
         return;

@@ -215,3 +215,37 @@ body.picking canvas { cursor: crosshair; }
 .goalbox .hold { color: #9cff7a; font-weight: 900; }
 .goalbox.min > div:not(.gt) { display: none; }
 @media (max-width: 820px), (max-height: 500px) { .goalbox { display: none; } }
+
+.reopen { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font-size: 18px; padding: 8px 22px; pointer-events: auto; }
+/* 結算：小螢幕縮小並可捲動 */
+.result { overflow-y: auto; }
+@media (max-height: 500px) {
+  .result .box { transform: scale(0.72); transform-origin: top center; margin-top: 6px; }
+  .result .big { font-size: 44px; }
+  .result .star { font-size: 44px; }
+}
+
+/* ── 手機橫向（高度 ≤ 500）：讓出戰場 ── */
+@media (max-height: 500px) {
+  .deploy .hint { display: none; }
+  .deploy { left: auto !important; right: 12px; transform: none !important; bottom: 94px !important; }
+  .deploy .go { font-size: 17px; padding: 6px 16px; }
+  .cmdbar { flex-wrap: nowrap; overflow-x: auto; max-width: 62vw; left: 8px; transform: none; bottom: 78px; justify-content: flex-start; scrollbar-width: none; }
+  .cmdbar::-webkit-scrollbar { display: none; }
+  .cmdbar .sep { display: none; }
+  .cmdbar .btn { flex: 0 0 auto; }
+  .toasts { top: 16%; }
+  .toast { font-size: 14px; }
+  .toast.gold { font-size: 17px; }
+  .toast.small { font-size: 12px; }
+  .toasts .toast:nth-last-child(n + 3) { display: none; }
+  .advisor { top: 70px; width: min(300px, 44vw); }
+  .advisor .say { font-size: 11px; }
+}
+/* ── 觸控：按鈕至少 36 px ── */
+@media (pointer: coarse) {
+  .sysbtns .btn { min-width: 40px; min-height: 36px; font-size: 15px; }
+  .cmdbar .btn { min-height: 34px; padding: 6px 9px; }
+  .advisor .x { font-size: 20px; padding: 2px 6px; right: 2px; }
+  .card .nm { font-size: 10px; }
+}

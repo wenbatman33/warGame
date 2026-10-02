@@ -60,6 +60,8 @@ export class Hud {
   private voiceT = 0;
   private terrainOn = false;
   private resultShown = false;
+  /** 結算結果（觀戰後用 🚪 離開也會記錄） */
+  private result: { scenario: string; win: boolean; stars: boolean[]; time: number } | null = null;
 
   constructor(
     container: HTMLElement,
@@ -128,6 +130,11 @@ export class Hud {
     const exit = el('div', 'btn red', '🚪');
     exit.title = '撤離戰場';
     exit.onclick = () => {
+      // 戰鬥已結束：直接帶著結果離開（星數照記）
+      if (b.world.over && this.result) {
+        b.exit(this.result);
+        return;
+      }
       if (confirm('放棄這場戰役，返回選單？')) b.exit(null);
     };
     const help = el('div', 'btn', '❓');
@@ -138,7 +145,10 @@ export class Hud {
     };
     const set = el('div', 'btn', '⚙');
     set.title = '設定';
-    set.onclick = () => b.opts.onSettings?.();
+    set.onclick = () => {
+      if (!b.paused) b.togglePause();
+      b.opts.onSettings?.();
+    };
     sys.append(this.terrainBtn, this.pauseBtn, this.speedBtn, help, set, exit);
     tr.appendChild(sys);
     const sup = el('div', 'supply');
@@ -193,6 +203,16 @@ export class Hud {
     const bottom = el('div', 'bottom');
     bottom.dataset.layout = 'bottom';
     this.cardsEl = el('div', 'cards');
+    this.cardsEl.addEventListener(
+      'wheel',
+      (e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          this.cardsEl.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      },
+      { passive: false },
+    );
     for (const r of w.regs.filter((x) => x.team === w.player)) this.addCard(r);
     const strats = el('div', 'strats');
     for (const id of STRATAGEM_ORDER) {
@@ -484,7 +504,8 @@ export class Hud {
     if (tr.road) terr.push('🛣 道路');
     const ammo = r.ranged ? r.members.reduce((a, i) => a + w.s.ammo[i], 0) / Math.max(1, r.members.length) : -1;
     const forms: Record<string, string> = { line: '橫陣', square: '方陣', wedge: '鋒矢', loose: '散陣' };
-    const buffs = r.buffs.filter((b) => b.until > w.t).map((b) => b.id);
+    const BUFF: Record<string, string> = { drums: '擂鼓', march: '急行軍', gong: '鳴金', berserk: '裸衣', terror: '威震', swift: '巧變', steady: '剛烈', unstoppable: '七進七出', fortify: '堅守', raid: '劫營', fury: '奮戰' };
+    const buffs = [...new Set(r.buffs.filter((b) => b.until > w.t).map((b) => BUFF[b.id] ?? b.id))];
     const gen = r.general ? GENERALS[r.general.id] : null;
     this.infoEl.style.display = 'block';
     this.infoEl.className = `reginfo${r.team !== w.player ? ' enemy' : ''}`;
@@ -667,6 +688,10 @@ export class Hud {
     const w = this.b.world;
     if (this.pending.kind === 'ability') {
       if (w.useAbility(this.pending.reg, x, z)) audio.voice('ack_charge');
+      else {
+        audio.play('ui_error');
+        this.toast('距離太遠（需在武將 160 m 內）', 'bad', true);
+      }
       this.cancelPick();
       return true;
     }
@@ -877,6 +902,7 @@ export class Hud {
     const me = w.teams[w.player];
     const en = w.teams[1 - w.player];
     const dur = w.t - ((w.flags.startT as number) ?? 0);
+    this.result = { scenario: b.sc.id, win, stars, time: dur };
     box.innerHTML = `<div class="box">
       <div class="big stroke ${win ? '' : 'lose'}">${win ? '大獲全勝' : '兵敗'}</div>
       <div class="stars">${stars.map(() => '<span class="star">⭐</span>').join('')}</div>
@@ -897,7 +923,17 @@ export class Hud {
     const back = el('div', 'btn stroke', '返回戰役');
     back.onclick = () => b.exit({ scenario: b.sc.id, win, stars, time: dur });
     const watch = el('div', 'btn stroke', '👁 觀看戰場');
-    watch.onclick = () => box.remove();
+    watch.onclick = () => {
+      box.remove();
+      // 觀戰時留一顆「返回結算」
+      const re = el('div', 'btn green stroke reopen', '📜 返回結算');
+      re.onclick = () => {
+        re.remove();
+        this.resultShown = false;
+        this.showResult();
+      };
+      this.root.appendChild(re);
+    };
     btns.append(again, back, watch);
     this.root.appendChild(box);
     const starEls = box.querySelectorAll('.star');
@@ -1026,14 +1062,14 @@ export class Hud {
     const hints = b.sc.hints;
     if (!hints || !SETTINGS.tips) return;
     const shownFor = performance.now() - this.advisorT;
-    if (this.advisorEl && shownFor > 12000) this.closeAdvisor();
+    if (this.advisorEl && shownFor > 16000) this.closeAdvisor();
     // 提示顯示超過 3.5 秒、而下一則已經可以出現 → 直接換下一則（教學步驟比較順）
     if (this.advisorEl && shownFor < 3500) return;
     const since = b.phase === 'deploy' ? -1 : w.t - ((w.flags.startT as number) ?? 0);
     for (let k = 0; k < hints.length; k++) {
       if (this.hintsDone.has(k)) continue;
       const hnt = hints[k];
-      const ok = hnt.when ? hnt.when(w) : hnt.at !== undefined && (hnt.at < 0 ? b.phase === 'deploy' : since >= hnt.at && b.phase === 'battle');
+      const ok = hnt.when ? (b.phase === 'battle' || hnt.deploy) && hnt.when(w) : hnt.at !== undefined && (hnt.at < 0 ? b.phase === 'deploy' : since >= hnt.at && b.phase === 'battle');
       if (!ok) continue;
       this.hintsDone.add(k);
       this.closeAdvisor();

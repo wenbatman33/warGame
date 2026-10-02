@@ -66,6 +66,8 @@ export interface HintSpec {
   /** 開戰後秒數（負數＝部署階段就顯示） */
   at?: number;
   when?: (w: World) => boolean;
+  /** when 條件在部署階段也判斷（教學用） */
+  deploy?: boolean;
   text: string;
 }
 

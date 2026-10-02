@@ -134,7 +134,7 @@ export const HEFEI: Scenario = {
   ],
   advisor: { name: '李典', portrait: 'hero/hero_lidian.jpg' },
   hints: [
-    { at: -1, text: '將軍，我軍只有八團，吳軍二十團。<b>不要正面硬拚</b>：以重騎衝鋒＋武將技連鎖打崩敵軍士氣。' },
+    { at: -1, text: '將軍，我軍只有八團，吳軍將近二十團。<b>不要正面硬拚</b>：以重騎衝鋒＋武將技連鎖打崩敵軍士氣。' },
     { at: 5, text: '選張遼，按指令列的「<b>⭐ 威震逍遙</b>」——35 m 內敵軍士氣 −35，衝進敵陣中央再放！' },
     { at: 40, text: '孫權在東南方<b>逍遙津橋頭</b>。孫權一死，吳軍全面潰敗！' },
     { when: (w) => w.regs.some((r) => r.team === 0 && r.stamina < 25 && r.unit.mounted), text: '騎兵<b>體力不足</b>了，先拉開休息一下再衝鋒。' },

@@ -81,9 +81,9 @@ export const BAIMA: Scenario = {
   advisor: { name: '荀攸', portrait: 'hero/hero_xunyou.jpg' },
   hints: [
     { at: -1, text: '主公，先學選取：<b>左鍵點一下我軍的軍團</b>（或下方的卡片、頭上的徽章）。' },
-    { when: flag('did_select'), text: '很好！現在<b>右鍵點地面</b>，軍團就會移動過去。' },
-    { when: flag('did_move'), text: '進階：選好軍團後<b>右鍵按住拖曳</b>，可以拉出一條戰線（拖曳長度＝陣寬、方向＝朝向）。也可以先 Shift 多選再拉。' },
-    { when: flag('did_line'), text: '佈陣完成就按下方「<b>⚔ 開戰</b>」（或 Enter）。開戰後可以隨時按<b>空白鍵暫停</b>。' },
+    { when: flag('did_select'), deploy: true, text: '很好！現在<b>右鍵點地面</b>，軍團就會移動過去。' },
+    { when: flag('did_move'), deploy: true, text: '進階：選好軍團後<b>右鍵按住拖曳</b>，可以拉出一條戰線（拖曳長度＝陣寬、方向＝朝向）。也可以先 Shift 多選再拉。' },
+    { when: flag('did_line'), deploy: true, text: '佈陣完成就按下方「<b>⚔ 開戰</b>」（或 Enter）。開戰後可以隨時按<b>空白鍵暫停</b>。' },
     { at: 3, text: '選<b>弓兵</b>，<b>右鍵點敵軍</b>就會進入射程放箭。弓兵怕近戰，記得放在步兵後面。' },
     { when: (w) => !!w.flags.did_attack, text: '敵軍會往前壓。用<b>刀盾兵、長槍兵</b>頂住正面，再派<b>輕騎</b>繞到側面或背後衝鋒——側擊與背襲會讓敵軍士氣狂掉！' },
     { when: (w) => w.regs.some((r) => r.team === 0 && r.engagedWith.size > 0), text: '接戰了！選<b>關羽</b>，按指令列的「<b>⭐ 青龍偃月</b>」重擊前方敵軍。顏良就在中間——斬了他，袁軍必亂。' },

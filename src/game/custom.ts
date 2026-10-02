@@ -14,9 +14,10 @@ export interface CustomOptions {
   enemySize: number;
   depots: boolean;
   time: 'day' | 'dusk' | 'night';
+  difficulty: 'easy' | 'normal' | 'hard';
 }
 
-export const CUSTOM_DEFAULT: CustomOptions = { terrain: 'river', player: 'wei', enemy: 'wu', mySize: 10, enemySize: 10, depots: true, time: 'day' };
+export const CUSTOM_DEFAULT: CustomOptions = { terrain: 'river', player: 'wei', enemy: 'wu', mySize: 10, enemySize: 10, depots: true, time: 'day', difficulty: 'normal' };
 
 const COMPOSITION: UnitTypeId[] = ['sword', 'spear', 'archer', 'sword', 'lightcav', 'spear', 'crossbow', 'heavycav', 'sword', 'archer', 'halberd', 'horsearcher', 'spear', 'lightcav', 'sword', 'archer', 'crossbow', 'heavycav', 'sword'];
 
@@ -65,7 +66,7 @@ export function buildCustomScenario(o: CustomOptions): Scenario {
   const me = FACTIONS[o.player];
   const en = FACTIONS[o.enemy === o.player ? (o.player === 'wei' ? 'wu' : 'wei') : o.enemy];
   const myArmy = army(o.player, o.mySize, 1, rnd);
-  const enArmy = army(en.id, o.enemySize, -1, rnd);
+  const enArmy = army(en.id, o.depots ? o.enemySize - 1 : o.enemySize, -1, rnd);
   const myGen = myArmy.find((x) => x.general)?.general;
   const enGen = enArmy.find((x) => x.general)?.general;
   return {

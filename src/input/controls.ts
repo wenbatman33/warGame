@@ -291,7 +291,8 @@ export class Controls {
       const len = avail * share;
       const sx = r.unit.spacing[0] * r.spacingMul();
       // 至少兩排縱深（太薄的陣線一衝就破）
-      const files = Math.max(2, Math.min(Math.ceil(r.alive / 2), Math.round(len / sx)));
+      const minFiles = Math.ceil(r.alive / (r.unit.mounted ? 3 : 6));
+      const files = Math.max(minFiles, Math.min(Math.ceil(r.alive / 2), Math.round(len / sx)));
       const realLen = files * sx;
       const mid = pos + len / 2;
       out.push({ reg: r, x: ax + dx * mid, z: az + dz * mid, facing, width: files });

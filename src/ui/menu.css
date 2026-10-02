@@ -91,3 +91,18 @@
 .advisor .say { background: rgba(250, 240, 215, 0.95); color: #2a1a08; border: 2px solid #000; border-radius: 10px; padding: 6px 10px 7px; font-size: 13px; font-weight: 700; line-height: 1.5; box-shadow: 0 3px 0 #000; position: relative; }
 .advisor .say b { color: #8a3a00; }
 .advisor .x { position: absolute; right: 4px; top: 0; cursor: pointer; font-size: 14px; color: #8a6a4a; }
+
+/* ── 手機橫向（高度 ≤ 500） ── */
+@media (max-height: 500px) {
+  .menu-c { gap: 7px; }
+  .logo { margin-bottom: 0; }
+  .logo .t { font-size: 46px; }
+  .logo .s { font-size: 13px; letter-spacing: 5px; }
+  .logo img { width: 60px; height: 60px; }
+  .mbtn { min-width: 210px; font-size: 16px; padding: 6px 18px; border-radius: 12px; }
+  .node .pin { width: 34px; height: 34px; border-width: 3px; }
+  .node .nm { font-size: 11px; margin-top: 2px; }
+  .node .yr { display: none; }
+  .node .st { font-size: 10px; }
+  .camp-title { font-size: 20px; }
+}

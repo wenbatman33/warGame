@@ -33,9 +33,11 @@ export function startModelViewer(container: HTMLElement): void {
   label.style.cssText = 'position:fixed;left:8px;top:8px;color:#fff;font:12px sans-serif;text-shadow:0 1px 2px #000;white-space:pre';
   label.textContent = '列：' + keys.join(' / ') + '\n欄：' + anims.join(' / ');
   container.appendChild(label);
-  const clock = new THREE.Clock();
+  let last = performance.now();
   stage.renderer.setAnimationLoop(() => {
-    const dt = clock.getDelta();
+    const now = performance.now();
+    const dt = (now - last) / 1000;
+    last = now;
     animTime.value = frozen ? Number(frozen) : animTime.value + dt;
     controls.update();
     sr.begin();
