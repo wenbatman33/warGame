@@ -15,9 +15,10 @@ export interface CustomOptions {
   depots: boolean;
   time: 'day' | 'dusk' | 'night';
   difficulty: 'easy' | 'normal' | 'hard';
+  weather: 'clear' | 'rain' | 'fog';
 }
 
-export const CUSTOM_DEFAULT: CustomOptions = { terrain: 'river', player: 'wei', enemy: 'wu', mySize: 10, enemySize: 10, depots: true, time: 'day', difficulty: 'normal' };
+export const CUSTOM_DEFAULT: CustomOptions = { terrain: 'river', player: 'wei', enemy: 'wu', mySize: 10, enemySize: 10, depots: true, time: 'day', difficulty: 'normal', weather: 'clear' };
 
 const COMPOSITION: UnitTypeId[] = ['sword', 'spear', 'archer', 'sword', 'lightcav', 'spear', 'crossbow', 'heavycav', 'sword', 'archer', 'halberd', 'horsearcher', 'spear', 'lightcav', 'sword', 'archer', 'crossbow', 'heavycav', 'sword'];
 
@@ -77,6 +78,7 @@ export function buildCustomScenario(o: CustomOptions): Scenario {
     intro: [],
     goals: ['擊潰敵軍'],
     time: o.time,
+    weather: o.weather,
     camera: { x: 0, z: 150, dist: 230 },
     map,
     teams: [

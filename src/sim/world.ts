@@ -1,7 +1,7 @@
 // 戰場模擬總管：固定 30 Hz；士兵移動、陣型、近戰、箭矢、士氣、糧草、視野、勝負
 import { FACTIONS } from '../data/factions';
 import { ABILITIES, GENERALS } from '../data/generals';
-import { RULES, SUPPLY_EFFECTS, type SupplyState } from '../data/rules';
+import { RULES, SUPPLY_EFFECTS, WEATHER, type SupplyState } from '../data/rules';
 import { STRATAGEMS, type StratagemId } from '../data/stratagems';
 import type { RegimentSpec, Scenario } from '../data/scenario';
 import { UNITS, type UnitDef } from '../data/units';
@@ -87,6 +87,11 @@ export class World {
   flags: Record<string, number | boolean> = {};
   private triggered = new Set<number>();
   bridges: { x: number; z: number; angle: number; length: number }[] = [];
+  /** 天氣效果 */
+  get wx() {
+    return WEATHER[this.sc.weather ?? 'clear'];
+  }
+
   /** 難度：各隊攻擊倍率 */
   teamAtk = [1, 1];
   /** 各隊「後方」方向（單位向量，由戰場中心指向己方本陣） */
@@ -483,7 +488,7 @@ export class World {
     sp *= SUPPLY_EFFECTS[this.teams[r.team].supply].speed;
     if (r.stamina < 30) sp *= 0.8;
     if (r.formation === 'square') sp *= 0.85;
-    sp *= r.buffMul('speed', this.t);
+    sp *= r.buffMul('speed', this.t) * this.wx.speed;
     return sp;
   }
 
@@ -525,7 +530,7 @@ export class World {
       const face = Math.atan2(tr.mx - r.cx, tr.mz - r.cz);
       if (r.ranged && !r.unit.mounted) {
         r.fireTarget = tr.id;
-        if (d > r.unit.ranged!.range * 0.9) moving = this.moveAnchorToward(r, tr.mx, tr.mz, dt, wantRun, 1.5);
+        if (d > r.unit.ranged!.range * 0.9 * this.wx.range) moving = this.moveAnchorToward(r, tr.mx, tr.mz, dt, wantRun, 1.5);
         else r.path = [];
         this.turnToward(r, face, dt);
       } else {
@@ -1100,16 +1105,16 @@ export class World {
     // 居高臨下：射程最多 +25%（仰射則縮短）
     const dh = this.hf.height(s.x[i], s.z[i]) - this.hf.height(s.x[j], s.z[j]);
     const hiBonus = 1 + Math.max(-0.15, Math.min(RULES.rangeMax, dh * RULES.rangePerMeter));
-    if (dist > rd.range * hiBonus) return;
+    if (dist > rd.range * hiBonus * this.wx.range) return;
     const flat = rd.arc === 'flat';
     const dur = flat ? 0.12 + dist / 85 : 0.9 + dist / 48;
     // 前置量＋散布
-    const spread = dist * (flat ? 0.03 : 0.06) * (r.stamina < 30 ? 1.3 : 1);
+    const spread = dist * (flat ? 0.03 : 0.06) * (r.stamina < 30 ? 1.3 : 1) * this.wx.scatter;
     const ax = s.x[j] + s.vx[j] * dur + this.gauss() * spread;
     const az = s.z[j] + s.vz[j] * dur + this.gauss() * spread;
     const sy = this.groundY(s.x[i], s.z[i]) + 1.5;
     const ty = this.groundY(ax, az) + 0.9;
-    const p = this.proj.spawn(s.x[i], sy, s.z[i], ax, ty, az, this.t, dur, flat ? Math.max(0.5, dist * 0.02) : 8 + dist * 0.22, s.team[i], rd.dmg * r.buffMul('atk', this.t) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk * this.teamAtk[r.team], rd.ap, r.fireArrows, r.id);
+    const p = this.proj.spawn(s.x[i], sy, s.z[i], ax, ty, az, this.t, dur, flat ? Math.max(0.5, dist * 0.02) : 8 + dist * 0.22, s.team[i], rd.dmg * r.buffMul('atk', this.t) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk * this.teamAtk[r.team] * this.wx.rangedDmg, rd.ap, r.fireArrows && this.sc.weather !== 'rain', r.id);
     if (p >= 0) this.events.push({ k: 'arrow', p });
     s.ammo[i]--;
     s.reload[i] = rd.reload * (0.85 + this.rng() * 0.3);
@@ -1569,7 +1574,7 @@ export class World {
         }
       }
       if (st.fire > 0) {
-        st.fire = Math.min(1, st.fire + dt * 0.05);
+        st.fire = Math.min(1, st.fire + dt * 0.05 * this.wx.fire);
         st.stock = Math.max(0, st.stock - st.maxStock * RULES.depotBurnRate * st.fire * dt * (st.kind === 'hq' ? 0.6 : 1));
         if (st.stock <= 0) this.burnDown(st);
       }
@@ -1722,7 +1727,7 @@ export class World {
         if (o.team === r.team || o.gone || o.routing) continue;
         const d = Math.hypot(o.mx - r.mx, o.mz - r.mz) - r.radius;
         const oForest = this.nav.forestAt(o.mx, o.mz) > 0.45;
-        const range = inForest ? RULES.forestHideRange : oForest ? RULES.forestVision : RULES.vision + (this.hf.height(o.mx, o.mz) > 8 ? 40 : 0);
+        const range = (inForest ? RULES.forestHideRange : oForest ? RULES.forestVision : RULES.vision + (this.hf.height(o.mx, o.mz) > 8 ? 40 : 0)) * this.wx.vision;
         if (d < range) {
           seen = true;
           break;

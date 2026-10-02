@@ -225,6 +225,7 @@ export class Battle {
   /** 測試用：不推進模擬，畫一幀（含 HUD） */
   debugFrame(): void {
     this.cam.update(0.5);
+    this.view.stage.updateWeatherFog(this.cam.dist);
     this.updateLook();
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[this.world.player].deploy : null);
@@ -289,6 +290,7 @@ export class Battle {
     }
     this.cam.update(raw);
     this.updateLook();
+    this.view.stage.updateWeatherFog(this.cam.dist);
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
     const alpha = this.acc / TICK;
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[w.player].deploy : null);

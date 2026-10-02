@@ -11,6 +11,7 @@ import { TICK, type GameEvent, type World } from '../sim/world';
 import { shipGeometry, SHIP_FIRE } from '../models/ship';
 import { WATER_LEVEL } from '../map/heightfield';
 import { ArrowRenderer } from './arrows';
+import { Rain } from './weather';
 import { Banners } from './banners';
 import { Overlays } from './overlays';
 import { Particles } from './particles';
@@ -40,6 +41,7 @@ export class BattleView {
   private teamColors: THREE.Color[];
   private sunDir = new THREE.Vector3();
   private fireLights: THREE.PointLight[] = [];
+  private rain: Rain | null = null;
   private ships: { mesh: THREE.Mesh; burning: boolean; ph: number }[] = [];
   private trampleData: Uint8Array;
   private trampleTex: THREE.DataTexture;
@@ -89,6 +91,12 @@ export class BattleView {
     this.stage.setTimeOfDay(sc.time ?? 'day');
     LOD.dist = 60;
     waterTint.value = sc.time === 'night' ? 0.38 : sc.time === 'dusk' ? 0.85 : 1;
+    this.stage.setWeather(sc.weather ?? 'clear', sc.time ?? 'day');
+    if (sc.weather === 'rain') {
+      waterTint.value *= 0.75;
+      this.rain = new Rain(quality === 'low' ? 3000 : 7000);
+      this.stage.scene.add(this.rain.mesh);
+    }
     // 火光：最多 4 盞點光源跟著燃燒中的營寨
     for (let k = 0; k < 4; k++) {
       // 永遠開著（只調亮度），避免光源數量變動造成 shader 重編
@@ -356,6 +364,14 @@ export class BattleView {
       if (!paused && (st.fire > 0 || st.burnt)) this.fireFx(sv, dt);
     }
     if (!paused) this.particles.update(dt);
+    if (this.rain) {
+      const c = this.stage.camera.position;
+      const t = new THREE.Vector3();
+      this.stage.camera.getWorldDirection(t);
+      // 雨區放在鏡頭前方的地面附近
+      const k = Math.max(20, Math.min(200, c.y * 0.9));
+      this.rain.follow(c.x + t.x * k, Math.max(0, c.y + t.y * k), c.z + t.z * k, paused ? 0 : dt);
+    }
   }
 
   private nearPlayer(x: number, z: number): boolean {

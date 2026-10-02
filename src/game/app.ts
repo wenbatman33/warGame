@@ -240,6 +240,7 @@ export class App {
     seg('敵軍規模', [[6, '6 團'], [10, '10 團'], [14, '14 團'], [20, '20 團']], () => o.enemySize, (v) => (o.enemySize = v));
     seg('糧倉', [[true, '有（可燒糧）'], [false, '無']], () => o.depots, (v) => (o.depots = v));
     seg('時間', [['day', '白天'], ['dusk', '黃昏'], ['night', '夜晚']], () => o.time, (v) => (o.time = v));
+    seg('天氣', [['clear', '晴'], ['rain', '雨（弓弩、火攻減弱）'], ['fog', '霧（視野縮短）']], () => o.weather, (v) => (o.weather = v));
     seg('難度', [['easy', '簡單'], ['normal', '普通'], ['hard', '困難']], () => o.difficulty, (v) => (o.difficulty = v));
     const acts = h('div', 'close');
     acts.style.display = 'flex';

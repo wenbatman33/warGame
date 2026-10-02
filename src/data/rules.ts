@@ -97,6 +97,13 @@ export const RULES = {
   forestHideRange: 50,
 };
 
+/** 天氣效果 */
+export const WEATHER = {
+  rain: { range: 0.75, rangedDmg: 0.8, fire: 0.4, speed: 0.92, vision: 0.8, scatter: 1.2 },
+  fog: { range: 1, rangedDmg: 1, fire: 1, speed: 1, vision: 0.45, scatter: 1.5 },
+  clear: { range: 1, rangedDmg: 1, fire: 1, speed: 1, vision: 1, scatter: 1 },
+};
+
 export type SupplyState = 'ok' | 'low' | 'starving';
 
 export const SUPPLY_EFFECTS: Record<SupplyState, { atk: number; def: number; speed: number; stamina: number; moraleCap: number; moraleDrain: number; name: string; icon: string }> = {

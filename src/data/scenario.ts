@@ -99,6 +99,8 @@ export interface Scenario {
   camera?: { x: number; z: number; dist?: number; yaw?: number };
   /** 天色：day／dusk／night */
   time?: 'day' | 'dusk' | 'night';
+  /** 天氣：雨（弓弩與火攻減弱、泥濘）、霧（視野縮短、箭矢散布變大） */
+  weather?: 'clear' | 'rain' | 'fog';
   /** 地圖上的文字標記 */
   labels?: { x: number; z: number; text: string }[];
   /** 場景裝飾（不影響模擬）：例如赤壁江上燃燒的連環船 */

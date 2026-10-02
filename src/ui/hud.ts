@@ -984,7 +984,8 @@ export class Hud {
     // 指令列出現時，部署面板往上讓位
     if (b.phase === 'deploy') this.deployEl.style.bottom = this.cmdbar.style.display === 'none' ? '' : `${110 + this.cmdbar.offsetHeight + 6}px`;
     const el2 = w.t - ((w.flags.startT as number) ?? w.t);
-    this.clockEl.textContent = b.phase === 'deploy' ? '部署中' : `${Math.floor(el2 / 60)}:${String(Math.floor(el2 % 60)).padStart(2, '0')}${b.sc.holdTime ? ` / ${Math.floor(b.sc.holdTime / 60)}:00` : ''}`;
+    const wxIcon = b.sc.weather === 'rain' ? '🌧 雨天・' : b.sc.weather === 'fog' ? '🌫 濃霧・' : '';
+    this.clockEl.textContent = wxIcon + (b.phase === 'deploy' ? '部署中' : `${Math.floor(el2 / 60)}:${String(Math.floor(el2 % 60)).padStart(2, '0')}${b.sc.holdTime ? ` / ${Math.floor(b.sc.holdTime / 60)}:00` : ''}`);
     const m0 = w.armyMorale(0);
     const m1 = w.armyMorale(1);
     const tot = m0 + m1 || 1;

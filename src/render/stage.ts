@@ -142,8 +142,44 @@ export class Stage {
     this.composer?.setPixelRatio(this.renderer.getPixelRatio());
   }
 
+  /** 天氣霧距：隨鏡頭距離縮放（[近, 遠] × 鏡頭距離），讓注視區看得清、遠方被霧吞沒 */
+  private fogK: [number, number] | null = null;
+  updateWeatherFog(camDist: number): void {
+    if (!this.fogK) return;
+    const fog = this.scene.fog as THREE.Fog;
+    fog.near = camDist * this.fogK[0];
+    fog.far = camDist * this.fogK[1] + 60;
+  }
+
+  /** 天氣：雨天陰暗、霧天濃霧（在 setTimeOfDay 之後呼叫） */
+  setWeather(w: 'clear' | 'rain' | 'fog', time: TimeOfDay): void {
+    if (w === 'clear') return;
+    const night = time === 'night';
+    if (w === 'rain') {
+      LIGHT.sunIntensity *= 0.4;
+      LIGHT.hemiIntensity *= 0.7;
+      LIGHT.exposure *= 0.9;
+      LIGHT.groundColor = '#4e5a3a';
+      LIGHT.skyColor = night ? '#2a3448' : '#a8b4bf';
+      LIGHT.fogColor = night ? '#1a2030' : '#8e99a3';
+      LIGHT.fogNear = 140;
+      LIGHT.fogFar = 620;
+      this.fogK = [0.9, 3.2];
+      this.scene.background = makeSkyTexture(night ? ['#0e1320', '#1a2232', '#242c3a'] : ['#6c7680', '#8e99a3', '#a9b2ba']);
+    } else {
+      LIGHT.sunIntensity *= 0.6;
+      LIGHT.fogColor = night ? '#2a3244' : '#d6dbe0';
+      LIGHT.fogNear = 35;
+      LIGHT.fogFar = 300;
+      this.fogK = [0.55, 1.7];
+      this.scene.background = makeSkyTexture(night ? ['#1e2636', '#2a3244', '#2a3244'] : ['#c4cbd2', '#d6dbe0', '#d6dbe0']);
+    }
+    this.applyLight();
+  }
+
   /** 套用天色預設 */
   setTimeOfDay(t: TimeOfDay): void {
+    this.fogK = null;
     const { sky, ...rest } = TIME_PRESETS[t];
     Object.assign(LIGHT, DAY_LIGHT, rest);
     this.scene.background = makeSkyTexture(sky);
