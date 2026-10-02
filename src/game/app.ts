@@ -168,6 +168,8 @@ export class App {
         difficulty: SETTINGS.difficulty,
         skipDeploy: params.has('skip'),
         onExit: (r) => this.onBattleExit(sc, image, r),
+        onHelp: () => this.showHelp(),
+        onSettings: () => this.showSettings(),
       });
       (window as unknown as { battle: Battle }).battle = this.battle;
       setTimeout(() => ld.remove(), 400);

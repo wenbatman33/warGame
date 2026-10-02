@@ -128,7 +128,16 @@ export class Hud {
     exit.onclick = () => {
       if (confirm('放棄這場戰役，返回選單？')) b.exit(null);
     };
-    sys.append(this.terrainBtn, this.pauseBtn, this.speedBtn, exit);
+    const help = el('div', 'btn', '❓');
+    help.title = '操作說明';
+    help.onclick = () => {
+      if (!b.paused) b.togglePause();
+      b.opts.onHelp?.();
+    };
+    const set = el('div', 'btn', '⚙');
+    set.title = '設定';
+    set.onclick = () => b.opts.onSettings?.();
+    sys.append(this.terrainBtn, this.pauseBtn, this.speedBtn, help, set, exit);
     tr.appendChild(sys);
     const sup = el('div', 'supply');
     for (let t = 0; t < 2; t++) {
@@ -195,7 +204,7 @@ export class Hud {
     // 部署面板
     this.deployEl = el('div', 'deploy');
     this.deployEl.dataset.layout = 'deploy';
-    this.deployEl.innerHTML = `<div class="hint">部署階段：拖曳軍團調整位置（藍框內）・右鍵拖曳拉出戰線與朝向・按「🗺 地形」看高地與淺灘</div>`;
+    this.deployEl.innerHTML = `<div class="hint">部署：左鍵選取／拖曳軍團（藍框內）・<b>右鍵拖曳拉出戰線</b>・🗺 地形看高地與淺灘・Enter 開戰</div>`;
     const go = el('div', 'btn green go stroke', '⚔ 開戰');
     go.onclick = () => {
       audio.unlock();

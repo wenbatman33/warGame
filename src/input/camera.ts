@@ -93,8 +93,11 @@ export class RtsCamera {
     this.goal.z = THREE.MathUtils.clamp(this.goal.z, -p, p);
   }
 
+  /** 平滑速度倍率（開場鏡頭用較慢的移動） */
+  smoothMul = 1;
+
   update(dt: number): void {
-    const k = 1 - Math.exp(-CAM.smooth * dt);
+    const k = 1 - Math.exp(-CAM.smooth * this.smoothMul * dt);
     this.target.x += (this.goal.x - this.target.x) * k;
     this.target.z += (this.goal.z - this.target.z) * k;
     this.dist += (this.goalDist - this.dist) * k;

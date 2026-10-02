@@ -94,6 +94,17 @@ export class Minimap {
     const w = this.w;
     g.imageSmoothingEnabled = true;
     g.drawImage(this.base, 0, 0, s, s);
+    // 糧道：輜重車
+    for (const wg of w.wagons) {
+      if (!wg.alive || wg.arrived) continue;
+      if (wg.team !== w.player && !w.regs.some((r) => r.team === w.player && !r.gone && Math.hypot(r.mx - wg.x, r.mz - wg.z) < 150)) continue;
+      const [x, y] = this.toMap(wg.x, wg.z);
+      g.fillStyle = '#f2d36a';
+      g.strokeStyle = '#000';
+      g.lineWidth = 1;
+      g.fillRect(x - 2, y - 2, 4, 4);
+      g.strokeRect(x - 2, y - 2, 4, 4);
+    }
     // 建築
     for (const st of w.structs) {
       const [x, y] = this.toMap(st.x, st.z);

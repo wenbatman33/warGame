@@ -459,6 +459,7 @@ export class World {
     const o = r.order;
     let moving = false;
     let wantRun = r.run;
+    let charging = false;
     if (o.type === 'attack' && o.target >= 0) {
       const tr = this.regs[o.target];
       // 目標消滅、或潰逃（只有騎兵會追擊潰兵）就停下
@@ -475,7 +476,10 @@ export class World {
         this.turnToward(r, face, dt);
       } else {
         const contact = r.depth() / 2 + tr.depth() / 2 + (r.unit.mounted ? -2 : 1.2);
-        if (r.unit.mounted && d < 80) wantRun = r.run = true; // 衝鋒
+        if (r.unit.mounted && d < 80) {
+          wantRun = r.run = true; // 衝鋒
+          charging = true;
+        }
         if (d > contact) {
           moving = this.moveAnchorToward(r, tr.mx - Math.sin(face) * contact * 0.5, tr.mz - Math.cos(face) * contact * 0.5, dt, wantRun, 1.0);
           if (d < 40) this.turnToward(r, face, dt);
@@ -523,7 +527,7 @@ export class World {
     const tireless = r.hasBuff('tireless', this.t);
     let ds = 0;
     if (r.engagedWith.size > 0) ds -= RULES.staminaFight;
-    else if (moving) ds -= wantRun ? (r.unit.mounted ? (o.type === 'attack' && o.target >= 0 ? RULES.staminaCharge : RULES.staminaRunCav) : RULES.staminaRun) : RULES.staminaWalk;
+    else if (moving) ds -= wantRun ? (r.unit.mounted ? (charging ? RULES.staminaCharge : RULES.staminaRunCav) : RULES.staminaRun) : RULES.staminaWalk;
     else ds += RULES.staminaRest * SUPPLY_EFFECTS[this.teams[r.team].supply].stamina;
     if (tireless && ds < 0) ds = 0;
     r.stamina = Math.max(0, Math.min(100, r.stamina + ds * dt));

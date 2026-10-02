@@ -18,6 +18,8 @@ export interface BattleOptions {
   onExit: (result: BattleResult | null) => void;
   /** 跳過部署（測試用） */
   skipDeploy?: boolean;
+  onHelp?: () => void;
+  onSettings?: () => void;
 }
 
 export interface BattleResult {
@@ -42,6 +44,8 @@ export class Battle {
   private running = true;
   /** 慢動作（事件鏡頭） */
   slowmo = 0;
+  /** 開場鏡頭倒數 */
+  private introT = 0;
 
   readonly sc: Scenario;
 
@@ -62,6 +66,16 @@ export class Battle {
     this.cam = new RtsCamera(this.view.stage.camera, hf);
     const c = sc.camera ?? { x: 0, z: 150 };
     this.cam.set(c.x, c.z, c.dist ?? 230, c.yaw ?? 0);
+    if (!opts.skipDeploy) {
+      // 開場鏡頭：先看敵軍陣地，再拉回我軍
+      const en = this.world.regs.filter((r) => r.team !== this.world.player && !r.hidden);
+      if (en.length) {
+        const ex = en.reduce((a, r) => a + r.cx, 0) / en.length;
+        const ez = en.reduce((a, r) => a + r.cz, 0) / en.length;
+        this.cam.set(ex, ez, 300, c.yaw ?? 0);
+        this.introT = 2.6;
+      }
+    }
     this.controls = new Controls(this.world, this.cam, this.view.stage.camera, this.view.stage.renderer.domElement, {
       onPause: () => this.togglePause(),
       onSpeed: (s) => this.setSpeed(s),
@@ -171,10 +185,17 @@ export class Battle {
     this.hud.refreshTime();
   }
 
+  /** 遠景：士兵放大、隊伍色更亮（大軍像一塊塊色塊，參考 Frost & Flame） */
+  private updateLook(): void {
+    const f = Math.min(1, Math.max(0, (this.cam.dist - 80) / 300));
+    soldierLook.scale.value = 1 + f * 0.75;
+    soldierLook.glow.value = 0.07 + f * 0.2;
+  }
+
   /** 測試用：不推進模擬，畫一幀（含 HUD） */
   debugFrame(): void {
     this.cam.update(0.5);
-    soldierLook.scale.value = 1 + Math.min(1, Math.max(0, (this.cam.dist - 90) / 320)) * 0.5;
+    this.updateLook();
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[this.world.player].deploy : null);
     this.view.render(1, 0.016, false);
@@ -217,9 +238,18 @@ export class Battle {
       w.events = [];
     }
     if (steps >= 8) this.acc = 0;
+    if (this.introT > 0) {
+      this.introT -= raw;
+      if (this.introT <= 0) {
+        const c = this.sc.camera ?? { x: 0, z: 150 };
+        this.cam.set(c.x, c.z, c.dist ?? 230, c.yaw ?? 0, false);
+        this.cam.smoothMul = 0.18;
+        setTimeout(() => (this.cam.smoothMul = 1), 3500);
+      }
+    }
     this.controls.update(raw);
     this.cam.update(raw);
-    soldierLook.scale.value = 1 + Math.min(1, Math.max(0, (this.cam.dist - 90) / 320)) * 0.5;
+    this.updateLook();
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
     const alpha = this.acc / TICK;
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[w.player].deploy : null);
