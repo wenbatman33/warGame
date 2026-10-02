@@ -29,7 +29,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
 export class Hud {
   readonly root: HTMLDivElement;
-  private badges = new Map<number, { el: HTMLDivElement; num: HTMLElement; mb: HTMLElement; st: HTMLElement }>();
+  private badges = new Map<number, { el: HTMLDivElement; num: HTMLElement; mb: HTMLElement; st: HTMLElement; warn: HTMLElement }>();
   private badgeLayer: HTMLDivElement;
   private cards = new Map<number, HTMLDivElement>();
   private cardsEl: HTMLDivElement;
@@ -49,6 +49,7 @@ export class Hud {
   private pauseBtn: HTMLElement;
   private terrainBtn: HTMLElement;
   private terrainTip: HTMLDivElement;
+  private infoEl: HTMLDivElement;
   private deployEl: HTMLDivElement;
   private minimap: Minimap;
   private slowT = 0;
@@ -163,6 +164,11 @@ export class Hud {
     this.terrainTip = el('div', 'terrain-tip');
     root.appendChild(this.terrainTip);
 
+    // 選取資訊
+    this.infoEl = el('div', 'reginfo');
+    this.infoEl.dataset.layout = 'reginfo';
+    root.appendChild(this.infoEl);
+
     // 指令列
     this.cmdbar = el('div', 'cmdbar');
     this.cmdbar.dataset.layout = 'cmdbar';
@@ -268,6 +274,19 @@ export class Hud {
     return s;
   }
 
+  /** 戰場即時警示：讓玩家看懂士氣為什麼在掉 */
+  private warnOf(r: Regiment): string {
+    const w = this.b.world;
+    if (r.routing) return '';
+    if (r.rearHits > 0) return '背襲！';
+    if (r.flankHits > 0) return '側擊！';
+    if (w.t - r.chargeShockT < 2.5) return '衝鋒！';
+    if (r.terrain.wet && r.engagedWith.size > 0) return '半渡！';
+    if (r.stamina < 25 && !r.unit.mounted) return '疲憊';
+    if (r.ranged && r.members.length && r.members.every((i) => w.s.ammo[i] <= 0)) return '箭盡';
+    return '';
+  }
+
   private moraleColor(m: number): string {
     return m >= RULES.highThreshold ? '#5fe0ff' : m >= RULES.waverThreshold ? '#6ee25a' : m >= RULES.routThreshold ? '#ffc24a' : '#ff5a45';
   }
@@ -347,7 +366,7 @@ export class Hud {
       let b = this.badges.get(r.id);
       if (!b) {
         const e = el('div', 'badge');
-        e.innerHTML = `<div class="ic">${this.iconOf(r)}</div><div class="bd">${r.general ? `<span class="gname stroke">${r.general.name}</span>` : ''}<span class="num"></span><span class="mb"><i></i></span></div><span class="st"></span>`;
+        e.innerHTML = `<div class="ic">${this.iconOf(r)}</div><div class="bd">${r.general ? `<span class="gname stroke">${r.general.name}</span>` : ''}<span class="num"></span><span class="mb"><i></i></span></div><span class="st"></span><span class="warn stroke"></span>`;
         e.onpointerdown = (ev) => {
           ev.stopPropagation();
           audio.unlock();
@@ -370,7 +389,7 @@ export class Hud {
           if (reg.team !== w.player) ctl.orderAt(reg.mx, reg.mz, false);
         };
         this.badgeLayer.appendChild(e);
-        b = { el: e, num: e.querySelector('.num')!, mb: e.querySelector('.mb i')!, st: e.querySelector('.st')! };
+        b = { el: e, num: e.querySelector('.num')!, mb: e.querySelector('.mb i')!, st: e.querySelector('.st')!, warn: e.querySelector('.warn')! };
         this.badges.set(r.id, b);
       }
       const enemy = r.team !== w.player;
@@ -382,6 +401,7 @@ export class Hud {
       b.mb.style.width = `${r.morale}%`;
       b.mb.style.background = this.moraleColor(r.morale);
       b.st.textContent = this.stateIcons(r);
+      b.warn.textContent = this.warnOf(r);
     }
     for (const [id, b] of this.badges) {
       if (!seen.has(id)) {
@@ -391,6 +411,48 @@ export class Hud {
         } else b.el.style.display = 'none';
       }
     }
+  }
+
+  // ───────────── 選取資訊 ─────────────
+
+  private updateInfo(): void {
+    const w = this.b.world;
+    const ctl = this.b.controls;
+    const ids = [...ctl.selected].filter((id) => !w.regs[id].gone);
+    let r: Regiment | null = ids.length === 1 ? w.regs[ids[0]] : null;
+    // 沒選己方時，滑鼠停在敵軍上也顯示
+    if (!r && ids.length === 0 && ctl.hover >= 0 && !w.regs[ctl.hover].gone) r = w.regs[ctl.hover];
+    if (!r) {
+      this.infoEl.style.display = 'none';
+      return;
+    }
+    const t = w.teams[r.team];
+    const sup = SUPPLY_EFFECTS[t.supply];
+    const st = r.state === 'shattered' ? '潰散' : r.routing ? '潰逃' : r.morale >= RULES.highThreshold ? '高昂' : r.morale >= RULES.waverThreshold ? '穩定' : '動搖';
+    const stColor = r.routing ? '#ff6a55' : r.morale >= RULES.highThreshold ? '#5fe0ff' : r.morale >= RULES.waverThreshold ? '#9cff7a' : '#ffc24a';
+    const terr: string[] = [];
+    const tr = r.terrain;
+    if (tr.high) terr.push(`⛰ 高地${tr.relHeight > 1 ? ` +${tr.relHeight.toFixed(0)}m（近戰 +${Math.round(Math.min(RULES.heightMax, tr.relHeight * RULES.heightPerMeter) * 100)}%）` : ''}`);
+    if (tr.forest) terr.push('🌲 森林（受箭 −30%）');
+    if (tr.wet) terr.push('🌊 涉水（受傷 +25%）');
+    if (tr.camp) terr.push('🏯 營寨（受傷 −25%）');
+    if (tr.road) terr.push('🛣 道路');
+    const ammo = r.ranged ? r.members.reduce((a, i) => a + w.s.ammo[i], 0) / Math.max(1, r.members.length) : -1;
+    const forms: Record<string, string> = { line: '橫陣', square: '方陣', wedge: '鋒矢', loose: '散陣' };
+    const buffs = r.buffs.filter((b) => b.until > w.t).map((b) => b.id);
+    const gen = r.general ? GENERALS[r.general.id] : null;
+    this.infoEl.style.display = 'block';
+    this.infoEl.className = `reginfo${r.team !== w.player ? ' enemy' : ''}`;
+    this.infoEl.innerHTML = `<div class="hd"><b>${r.name}</b><span>${r.unit.name}</span></div>
+      <div class="row"><span>兵力</span><b>${fmt(r.alive * MEN_PER_SOLDIER)}</b><small>／${fmt(r.initial * MEN_PER_SOLDIER)}</small></div>
+      <div class="row"><span>士氣</span><b style="color:${stColor}">${Math.round(r.morale)} ${st}</b>${r.routs ? `<small>潰逃 ${r.routs} 次</small>` : ''}</div>
+      <div class="row"><span>體力</span><b>${Math.round(r.stamina)}</b>${r.stamina < 30 ? '<small style="color:#ffc24a">疲憊：攻防 −15%</small>' : ''}</div>
+      ${ammo >= 0 ? `<div class="row"><span>箭矢</span><b>${ammo.toFixed(0)}</b><small>輪</small></div>` : ''}
+      <div class="row"><span>陣型</span><b>${forms[r.formation]}</b>${r.hold ? '<small>🛡 堅守</small>' : ''}${r.run ? '<small>🏃 奔跑</small>' : ''}</div>
+      <div class="row"><span>糧況</span><b>${sup.icon}${sup.name}</b>${t.panicUntil > w.t ? '<small style="color:#ff6a55">😱 軍心大亂</small>' : ''}</div>
+      ${terr.length ? `<div class="row t">${terr.join('<br>')}</div>` : ''}
+      ${gen ? `<div class="row t">⭐ ${gen.name}（武${gen.war} 統${gen.lead} 智${gen.int}）${r.general!.alive ? '' : '<b style="color:#ff6a55">陣亡</b>'}</div>` : ''}
+      ${buffs.length ? `<div class="row t">✨ ${buffs.join('、')}</div>` : ''}`;
   }
 
   // ───────────── 指令列 ─────────────
@@ -790,6 +852,7 @@ export class Hud {
     }
     this.updateCards();
     this.updateAbilityCd();
+    this.updateInfo();
     if (this.slowT % 2 === 0) this.minimap.draw();
     this.updateHints();
     // 地形提示（滑鼠所在點）

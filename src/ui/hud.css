@@ -114,7 +114,7 @@
 .cmdbar .abil .cd { position: absolute; left: 0; bottom: 0; top: 0; background: rgba(0, 0, 0, 0.55); }
 
 /* 地形提示（左下） */
-.terrain-tip { position: absolute; left: 10px; bottom: 112px; background: var(--panel); border: 2px solid #000; border-radius: 8px; padding: 3px 8px; font-size: 12px; font-weight: 700; color: #fff; display: none; }
+.terrain-tip { position: absolute; left: 230px; bottom: 112px; background: var(--panel); border: 2px solid #000; border-radius: 8px; padding: 3px 8px; font-size: 12px; font-weight: 700; color: #fff; display: none; }
 
 /* 部署面板 */
 .deploy { position: absolute; left: 50%; bottom: 158px; transform: translateX(-50%); text-align: center; pointer-events: none; }
@@ -175,3 +175,18 @@ body.picking canvas { cursor: crosshair; }
 .sbadge .bar { width: 64px; height: 6px; background: #000; border: 1.5px solid #000; border-radius: 4px; overflow: hidden; display: block; }
 .sbadge .bar i { display: block; height: 100%; }
 .sbadge.burnt { opacity: 0.6; }
+
+/* 徽章警示 */
+.badge .warn { position: absolute; left: 0; top: -15px; font-size: 12px; font-weight: 900; color: #ff5a45; white-space: nowrap; animation: blink 0.6s infinite; }
+/* 選取資訊 */
+.reginfo { position: absolute; left: 10px; bottom: 138px; width: 210px; display: none; background: var(--panel); border: 2px solid #000; border-radius: 10px; padding: 6px 9px 7px; font-size: 12px; color: #eee; pointer-events: none; box-shadow: 0 3px 0 #000; transform-origin: bottom left; }
+.reginfo.enemy { background: rgba(60, 14, 8, 0.82); }
+.reginfo .hd { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding-bottom: 3px; }
+.reginfo .hd b { font-size: 14px; color: var(--gold); }
+.reginfo .hd span { font-size: 11px; color: #ccc; }
+.reginfo .row { display: flex; gap: 6px; align-items: baseline; margin: 1px 0; }
+.reginfo .row > span { width: 30px; color: #bbb; }
+.reginfo .row b { color: #fff; }
+.reginfo .row small { color: #aaa; font-size: 11px; }
+.reginfo .row.t { display: block; font-size: 11px; color: #ffe9a8; margin-top: 3px; line-height: 1.4; }
+@media (max-width: 820px), (max-height: 500px) { .reginfo { display: none !important; } }

@@ -11,6 +11,7 @@ export type LayoutKey = 'pc' | 'tablet' | 'mobile';
 const item = (scale = 1, dx = 0, dy = 0): LayoutItem => ({ dx, dy, scale, opacity: 1 });
 
 export const LAYOUT_PC: LayoutSet = {
+  reginfo: item(),
   cmdr: item(),
   top: item(),
   topRight: item(),
@@ -20,6 +21,7 @@ export const LAYOUT_PC: LayoutSet = {
   menu: item(),
 };
 export const LAYOUT_TABLET: LayoutSet = {
+  reginfo: item(),
   cmdr: item(0.9),
   top: item(0.9),
   topRight: item(0.85),
@@ -29,6 +31,7 @@ export const LAYOUT_TABLET: LayoutSet = {
   menu: item(0.9),
 };
 export const LAYOUT_MOBILE: LayoutSet = {
+  reginfo: item(),
   cmdr: item(0.78),
   top: item(0.8),
   topRight: item(0.7),
