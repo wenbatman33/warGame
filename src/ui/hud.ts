@@ -568,6 +568,10 @@ export class Hud {
       ['loose', '散陣', '受箭傷 −40%、近戰防禦 −20%'],
     ];
     for (const [f, nm, tip] of forms) btn(nm, `${nm}：${tip}（T 切換）`, all((r) => r.formation === f), () => w.setFormation(ids, f));
+    // 全軍突擊（兩團以上、開戰後）
+    if (regs.length >= 2 && this.b.phase === 'battle') {
+      btn('⚔ 全軍突擊', '每團自動分配最近的敵軍進攻（目標盡量分散；弓弩射擊、騎兵衝鋒）', false, () => this.assault(ids), 'red');
+    }
     // 陣法（三團以上）
     if (regs.length >= 3) {
       bar.appendChild(el('div', 'sep'));
@@ -611,6 +615,35 @@ export class Hud {
       bar.appendChild(el('div', 'sep'));
       btn('☑ 多選', '點卡片／旗號加入選取', this.b.controls.multiSelect, () => (this.b.controls.multiSelect = !this.b.controls.multiSelect));
     }
+  }
+
+  /** 全軍突擊：貪婪分配，每個敵軍團最多被兩團鎖定 */
+  private assault(ids: number[]): void {
+    const w = this.b.world;
+    const enemies = w.regs.filter((e) => e.team !== w.player && !e.gone && !e.routing && w.isVisibleTo(e, w.player));
+    if (!enemies.length) {
+      this.toast('看不到敵軍', 'info', true);
+      return;
+    }
+    const load = new Map<number, number>();
+    for (const id of ids) {
+      const r = w.regs[id];
+      if (r.gone || r.routing) continue;
+      let best = enemies[0];
+      let bs = Infinity;
+      for (const e of enemies) {
+        const d = Math.hypot(e.mx - r.mx, e.mz - r.mz) * (1 + (load.get(e.id) ?? 0) * 0.6);
+        if (d < bs) {
+          bs = d;
+          best = e;
+        }
+      }
+      load.set(best.id, (load.get(best.id) ?? 0) + 1);
+      w.commandAttack([r.id], best.id, r.unit.mounted || undefined);
+    }
+    audio.play('horn_charge');
+    audio.voice('ack_charge');
+    this.toast('全軍突擊！', 'gold', true);
   }
 
   /** 套用陣法：部署階段直接就位，開戰後下移動令 */

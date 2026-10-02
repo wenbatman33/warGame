@@ -887,6 +887,8 @@ export class World {
     if (s.fighting[i]) return; // 攻擊動作在出手時設定
     if (s.anim[i] === 4 && t - s.animStart[i] < ANIMS.shoot.dur / Math.max(0.1, s.animSpeed[i])) return; // 射擊中
     if (s.anim[i] === 3 && t - s.animStart[i] < ANIMS.attack.dur / Math.max(0.1, s.animSpeed[i])) return; // 揮砍中
+    // 勝利：停著的士兵舉兵器歡呼
+    if (this.over && r.team === this.winner && speed < 0.35) return s.setAnim(i, 'cheer', t, 0.8 + s.tint[i] * 0.4);
     if (speed > u.walk * 1.25) s.setAnim(i, 'run', t, (speed / u.run) * slow);
     else if (speed > 0.35) s.setAnim(i, 'walk', t, Math.max(0.5, speed / u.walk) * slow);
     else if (r.hold && r.type === 'spear' && !r.routing) s.setAnim(i, 'brace', t, 1);

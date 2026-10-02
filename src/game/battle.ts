@@ -344,6 +344,8 @@ export class Battle {
         case 'clash':
           audio.play('clash', { ...this.sndPos(ev.x, ev.z), volume: 0.5, rate: 0.85 + Math.random() * 0.3 });
           if (Math.random() < 0.3) this.view.particles.emit('spark', ev.x, w.groundY(ev.x, ev.z) + 1.2, ev.z, 3, 0.4);
+          // 肉搏揚起的塵土
+          if (Math.random() < 0.25 && this.sc.weather !== 'rain') this.view.particles.emit('dust', ev.x, w.groundY(ev.x, ev.z) + 0.3, ev.z, 1, 2, 0.9);
           break;
         case 'charge':
           audio.play('charge_impact', this.sndPos(ev.x, ev.z));
