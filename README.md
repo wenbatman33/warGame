@@ -4,6 +4,14 @@
 
 規劃書：[`docs/`](docs/00-專案總覽.md)
 
+| 千軍對撞 | 火燒烏巢 |
+|---|---|
+| ![千軍對撞](docs/screenshots/battle.jpg) | ![火燒烏巢](docs/screenshots/wuchao-fire.jpg) |
+| **戰役地圖** | **戰前簡報** |
+| ![戰役地圖](docs/screenshots/campaign.jpg) | ![戰前簡報](docs/screenshots/briefing.jpg) |
+| **半渡而擊** | **軍團資訊與背襲警示** |
+| ![淺灘](docs/screenshots/ford.jpg) | ![資訊面板](docs/screenshots/info-panel.jpg) |
+
 **線上試玩**：https://wenbatman33.github.io/warGame/ （網址加 `?dev=1`，按 ` 鍵或右下齒輪開 DEV 微調工具）
 
 ## 進度
