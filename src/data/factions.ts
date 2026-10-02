@@ -1,5 +1,5 @@
 // 勢力：顏色、旗號字、名稱
-export type FactionId = 'wei' | 'yuan' | 'shu' | 'wu' | 'dong';
+export type FactionId = 'wei' | 'yuan' | 'shu' | 'wu' | 'dong' | 'han';
 
 export interface FactionDef {
   id: FactionId;
@@ -17,4 +17,5 @@ export const FACTIONS: Record<FactionId, FactionDef> = {
   shu: { id: 'shu', name: '蜀', color: '#2fa84f', dark: '#14552a', flag: '劉' },
   wu: { id: 'wu', name: '吳', color: '#d8402f', dark: '#701c12', flag: '孫' },
   dong: { id: 'dong', name: '董', color: '#7a4bc4', dark: '#3b1f66', flag: '董' },
+  han: { id: 'han', name: '聯', color: '#1fa08c', dark: '#0d4f45', flag: '盟' },
 };

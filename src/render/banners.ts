@@ -51,6 +51,8 @@ export class Banners {
   update(alpha: number): void {
     const w = this.w;
     const s = w.s;
+    // 中途加入的軍團（援軍、逃兵群以外）補上軍旗
+    while (this.list.length < w.regs.length) this.add(this.list.length);
     // 倒戈的軍團換旗
     for (const st of this.list) {
       const r = w.regs[st.reg];

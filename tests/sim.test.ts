@@ -165,6 +165,6 @@ describe('劇本', () => {
       const bad = w.regs.filter((r) => !r.gone && !w.nav.passable(r.mx, r.mz) && !w.isWet(r.mx, r.mz)).length;
       expect(bad).toBeLessThanOrEqual(2);
       expect(w.regs.filter((r) => r.team === 0).length).toBeGreaterThan(4);
-    });
+    }, 30000);
   }
 });

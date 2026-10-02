@@ -51,6 +51,7 @@ export class Hud {
   private terrainBtn: HTMLElement;
   private terrainTip: HTMLDivElement;
   private infoEl: HTMLDivElement;
+  private goalsEl: HTMLDivElement;
   private deployEl: HTMLDivElement;
   private minimap: Minimap;
   private slowT = 0;
@@ -160,6 +161,10 @@ export class Hud {
     this.minimap = new Minimap(w, b.cam, 168);
     this.minimap.canvas.className = 'minimap';
     tr.appendChild(this.minimap.canvas);
+    // 三星目標
+    this.goalsEl = el('div', 'goalbox pe');
+    this.goalsEl.onclick = () => this.goalsEl.classList.toggle('min');
+    tr.appendChild(this.goalsEl);
     root.appendChild(tr);
 
     // 徽章層
@@ -438,6 +443,21 @@ export class Hud {
     }
   }
 
+  private updateGoals(): void {
+    const w = this.b.world;
+    const rows = this.b.sc.stars.map((st) => {
+      let ok = false;
+      try {
+        ok = st.check(w);
+      } catch {
+        ok = false;
+      }
+      return `<div class="${ok ? 'ok' : ''}">${ok ? '⭐' : '☆'} ${st.text}</div>`;
+    });
+    const hold = this.b.sc.holdTime ? `<div class="hold">⏳ 堅守 ${Math.max(0, Math.ceil(this.b.sc.holdTime - (w.t - ((w.flags.startT as number) ?? w.t))))} 秒</div>` : '';
+    this.goalsEl.innerHTML = `<div class="gt">🎯 目標 <small>（點擊收合）</small></div>${hold}${rows.join('')}`;
+  }
+
   // ───────────── 選取資訊 ─────────────
 
   private updateInfo(): void {
@@ -661,9 +681,22 @@ export class Hud {
     return true;
   }
 
-  onKey(k: string): boolean {
+  /** Shift 是否按著（Shift+H＝拍照模式） */
+  private photoKey = false;
+
+  onKey(k: string, e?: KeyboardEvent): boolean {
+    this.photoKey = !!e?.shiftKey;
     if (k === 'v') {
       this.toggleTerrain();
+      return true;
+    }
+    if (k === 'b') {
+      this.badgeLayer.style.display = this.badgeLayer.style.display === 'none' ? '' : 'none';
+      this.toast(this.badgeLayer.style.display === 'none' ? '隱藏徽章（B 恢復）' : '顯示徽章', 'info', true);
+      return true;
+    }
+    if (k === 'h' && this.photoKey) {
+      this.root.classList.toggle('photo');
       return true;
     }
     if (k === 'c') {
@@ -856,6 +889,7 @@ export class Hud {
         <div><b>${en.depotsBurnt}</b>焚敵糧倉</div>
         <div><b>${Math.floor(dur / 60)}:${String(Math.floor(dur % 60)).padStart(2, '0')}</b>戰鬥時間</div>
       </div>
+      ${this.honorRoll()}
       <div class="btns"></div></div>`;
     const btns = box.querySelector('.btns')!;
     const again = el('div', 'btn green stroke', '⚔ 再戰一次');
@@ -874,6 +908,18 @@ export class Hud {
         audio.play('star', { rate: [1, 1.12, 1.26][i] });
       }, 600 + i * 450);
     });
+  }
+
+  /** 戰功榜：我軍斬敵前三名 */
+  private honorRoll(): string {
+    const w = this.b.world;
+    const top = w.regs
+      .filter((r) => r.team === w.player && r.name !== '逃兵' && r.kills > 0)
+      .sort((a, b) => b.kills - a.kills)
+      .slice(0, 3);
+    if (!top.length) return '';
+    const medal = ['🥇', '🥈', '🥉'];
+    return `<div class="honor">${top.map((r, i) => `<div>${medal[i]} <b>${r.general ? r.general.name : r.name}</b><small>${r.unit.name}</small><span>斬敵 ${fmt(r.kills * MEN_PER_SOLDIER)}</span></div>`).join('')}</div>`;
   }
 
   // ───────────── 每幀 ─────────────
@@ -928,6 +974,7 @@ export class Hud {
     this.updateCards();
     this.updateAbilityCd();
     this.updateInfo();
+    if (this.slowT % 5 === 0) this.updateGoals();
     if (this.slowT % 2 === 0) this.minimap.draw();
     this.updateHints();
     this.hqAlarm();

@@ -107,6 +107,8 @@ export class Regiment {
   cohesion = 1;
   /** 已逃出戰場人數 */
   fled = 0;
+  /** 戰功：斬敵數 */
+  kills = 0;
   ai: { role: AiRole; anchorX: number; anchorZ: number; waitUntil: number; homeX: number; homeZ: number; targetT: number } = {
     role: 'line',
     anchorX: 0,
@@ -118,6 +120,8 @@ export class Regiment {
   };
   /** 目前所處地形（0.5 秒更新） */
   terrain = { height: 0, relHeight: 0, high: false, forest: false, wet: false, camp: false, road: false };
+  /** 部署階段不能移動（例：長坂坡的趙雲在敵陣中） */
+  fixed = false;
   /** 10 秒內重大傷亡的驚嚇已觸發 */
   flagsHeavy = false;
   /** 由 DEV 或劇本設定：不會潰逃 */

@@ -106,7 +106,8 @@ export const JIETING: Scenario = {
       commander: 'masu',
       hq: { x: 0, z: -95, stock: 260, name: '南山大營' },
       depots: [{ x: 95, z: 62, stock: 100, kind: 'water', name: '水源' }],
-      consume: 1.5,
+      // 沒有糧倉補給：平時慢慢消耗，斷水才會急速崩潰
+      consume: 0.4,
       ai: { plan: 'hold', aggression: 0.4, raid: false, startDelay: 0 },
       regiments: [
         { type: 'guard', x: 0, z: -60, general: 'masu', role: 'hold' },

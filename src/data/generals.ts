@@ -33,7 +33,13 @@ export type GeneralId =
   | 'shamoke'
   | 'guohuai'
   | 'xunyou'
-  | 'yanliang';
+  | 'yanliang'
+  | 'lvbu'
+  | 'dongzhuo'
+  | 'huaxiong'
+  | 'huangzhong'
+  | 'xiahouyuan'
+  | 'fazheng';
 
 export type AbilityId =
   | 'rally' // 號令：範圍士氣＋、潰兵重整
@@ -116,6 +122,12 @@ export const GENERALS: Record<GeneralId, GeneralDef> = {
   fengxi: { id: 'fengxi', name: '馮習', faction: 'shu', war: 75, lead: 70, int: 55, model: 'gen_sword', ability: null, title: '前部督' },
   shamoke: { id: 'shamoke', name: '沙摩柯', faction: 'shu', war: 90, lead: 55, int: 25, model: 'gen_glaive', ability: 'berserk', title: '五溪蠻王' },
   guohuai: { id: 'guohuai', name: '郭淮', faction: 'wei', war: 78, lead: 85, int: 75, model: 'gen_spear', ability: 'steady', title: '雍州刺史' },
+  huangzhong: { id: 'huangzhong', name: '黃忠', faction: 'shu', war: 95, lead: 80, int: 60, model: 'gen_glaive', ability: 'fury', title: '老當益壯' },
+  xiahouyuan: { id: 'xiahouyuan', name: '夏侯淵', faction: 'wei', war: 90, lead: 85, int: 60, model: 'gen_sword', ability: 'swift', title: '虎步關右' },
+  fazheng: { id: 'fazheng', name: '法正', faction: 'shu', war: 30, lead: 75, int: 94, model: 'gen_fan', ability: 'rally', title: '翼侯' },
+  lvbu: { id: 'lvbu', name: '呂布', faction: 'dong', war: 100, lead: 70, int: 30, model: 'gen_ji', ability: 'terror', title: '人中呂布' },
+  dongzhuo: { id: 'dongzhuo', name: '董卓', faction: 'dong', war: 70, lead: 75, int: 60, model: 'gen_sword', ability: 'rally', title: '相國' },
+  huaxiong: { id: 'huaxiong', name: '華雄', faction: 'dong', war: 88, lead: 60, int: 30, model: 'gen_glaive', ability: 'fury', title: '西涼猛將' },
   yanliang: { id: 'yanliang', name: '顏良', faction: 'yuan', war: 92, lead: 70, int: 40, model: 'gen_glaive', ability: 'fury', title: '河北名將' },
   xunyou: { id: 'xunyou', name: '荀攸', faction: 'wei', war: 30, lead: 70, int: 95, model: 'gen_fan', ability: null, title: '謀主' },
 };

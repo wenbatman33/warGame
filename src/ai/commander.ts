@@ -39,6 +39,7 @@ export class AiCommander {
       w.events.push({ k: 'msg', text: `${w.teams[this.team].name}全軍出擊！`, tone: this.team === w.player ? 'good' : 'bad' });
     }
     if (this.diff !== 'easy' && started) this.stratagems(mine, enemies);
+    this.defendHq(mine, enemies);
     for (const r of mine) {
       this.ability(r, enemies);
       switch (r.ai.role) {
@@ -272,6 +273,20 @@ export class AiCommander {
       }
     }
     if (use) w.useAbility(r.id);
+  }
+
+  /** 敵軍逼近本陣 90 m 內：派最近的兩團（未交戰）回防 */
+  private defendHq(mine: Regiment[], enemies: Regiment[]): void {
+    const hq = this.w.teams[this.team].hq;
+    if (!hq || hq.burnt) return;
+    const threats = enemies.filter((e) => !e.routing && Math.hypot(e.mx - hq.x, e.mz - hq.z) < 90);
+    if (!threats.length) return;
+    const t = threats[0];
+    const free = mine
+      .filter((r) => r.engagedWith.size === 0 && !r.ranged && r.order.target !== t.id)
+      .sort((a, b) => Math.hypot(a.mx - hq.x, a.mz - hq.z) - Math.hypot(b.mx - hq.x, b.mz - hq.z))
+      .slice(0, threats.length > 1 ? 3 : 2);
+    for (const r of free) if (Math.hypot(r.mx - hq.x, r.mz - hq.z) < 260) this.w.commandAttack([r.id], t.id, true);
   }
 
   private stratT = 0;

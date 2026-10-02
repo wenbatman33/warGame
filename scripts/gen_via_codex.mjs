@@ -10,7 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const manifest = JSON.parse(readFileSync(path.join(ROOT, 'scripts/asset_manifest.json'), 'utf-8'));
+// MANIFEST 環境變數可指定另一份清單
+const manifest = JSON.parse(readFileSync(process.env.MANIFEST ?? path.join(ROOT, 'scripts/asset_manifest.json'), 'utf-8'));
 const LOG = path.join(ROOT, 'scripts/gen_via_codex.log');
 const args = process.argv.slice(2);
 const only = new Set();
@@ -56,7 +57,8 @@ log(`\n=== ${new Date().toISOString()} ${items.length} 項 ===`);
 let ok = 0;
 let fail = 0;
 for (const [k, it] of items.entries()) {
-  const dir = path.join(ROOT, 'public/assets', it.cat);
+  // OUT 環境變數可改輸出根目錄（例：先生成到暫存區）
+  const dir = path.join(process.env.OUT ?? path.join(ROOT, 'public/assets'), it.cat);
   mkdirSync(dir, { recursive: true });
   const out = path.join(dir, `${it.id}.png`);
   // 已產生過（含已瘦身成 JPEG、或原圖已備份到 art/originals）就跳過

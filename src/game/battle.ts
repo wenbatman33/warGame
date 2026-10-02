@@ -99,7 +99,7 @@ export class Battle {
       deployMode: () => this.phase === 'deploy',
       onDeployMove: (id, x, z) => this.deployMove(id, x, z),
       onDeployPlace: (id, x, z, f, wd) => this.deployPlace(id, x, z, f, wd),
-      onKey: (k) => this.hud.onKey(k),
+      onKey: (k, e) => this.hud.onKey(k, e),
     });
     this.hud = new Hud(container, this);
     for (let t = 0; t < sc.teams.length; t++) {
@@ -115,7 +115,7 @@ export class Battle {
     const w = this.world;
     const r = w.regs[id];
     const dz = this.sc.teams[w.player].deploy;
-    if (!r || r.team !== w.player) return;
+    if (!r || r.team !== w.player || r.fixed) return;
     if (dz) {
       x = Math.max(dz.x - dz.w / 2, Math.min(dz.x + dz.w / 2, x));
       z = Math.max(dz.z - dz.d / 2, Math.min(dz.z + dz.d / 2, z));
@@ -139,7 +139,7 @@ export class Battle {
   deployPlace(id: number, x: number, z: number, facing: number, width?: number): void {
     const w = this.world;
     const r = w.regs[id];
-    if (!r || r.team !== w.player) return;
+    if (!r || r.team !== w.player || r.fixed) return;
     const dz = this.sc.teams[w.player].deploy;
     if (dz) {
       x = Math.max(dz.x - dz.w / 2, Math.min(dz.x + dz.w / 2, x));

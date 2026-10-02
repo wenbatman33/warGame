@@ -251,6 +251,7 @@ export class World {
     r.formation = rs.formation ?? 'line';
     r.hold = !!rs.hold;
     r.hidden = !!rs.hidden;
+    r.fixed = !!rs.fixed;
     if (rs.morale) r.baseMorale = r.morale = rs.morale;
     if (rs.role) r.ai.role = rs.role;
     else r.ai.role = unit.ranged ? 'ranged' : unit.mounted ? 'flank' : 'line';
@@ -1164,7 +1165,7 @@ export class World {
         if (s.team[best] === p.team[k]) dmg *= RULES.friendlyFireMul;
         er.arrowsTaken++;
         hit = shielded ? 2 : 1;
-        if (dmg > 0) this.damage(best, dmg, -1);
+        if (dmg > 0) this.damage(best, dmg, -1, p.reg[k]);
       }
       if (p.fire[k]) this.fireArrowLand(x, z, p.team[k]);
       this.events.push({ k: 'impact', x, z, hit, fire: !!p.fire[k] });
@@ -1172,11 +1173,15 @@ export class World {
   }
 
   /** 傷害：可能致死 */
-  damage(j: number, dmg: number, by: number): void {
+  /** 傷害：可能致死（byReg：箭矢等遠程來源的軍團，用來記戰功） */
+  damage(j: number, dmg: number, by: number, byReg = -1): void {
     const s = this.s;
     if (s.state[j] !== SState.Alive) return;
     s.hp[j] -= dmg;
     if (s.hp[j] > 0) return;
+    // 戰功
+    const killer = by >= 0 ? s.reg[by] : byReg;
+    if (killer >= 0 && this.regs[killer] && this.regs[killer].team !== s.team[j]) this.regs[killer].kills++;
     // 死亡
     s.state[j] = SState.Dying;
     s.deathT[j] = this.t;
@@ -1471,7 +1476,9 @@ export class World {
       let enemies = 0;
       let friends = 0;
       let raidMul = 1;
-      const n = this.hash.near(st.x, st.z, RULES.depotDefendRadius + 4);
+      // 守軍判定：營寨外圍 25 m 內都算（站在柵欄外守著也算有人防守）
+      const defR = st.radius + RULES.depotDefendRadius;
+      const n = this.hash.near(st.x, st.z, defR + 4);
       const res = this.hash.res;
       for (let k = 0; k < n; k++) {
         const j = res[k];
@@ -1480,7 +1487,7 @@ export class World {
         const r = this.regs[s.reg[j]];
         if (r.routing) continue;
         if (s.team[j] === st.team) {
-          if (d < RULES.depotDefendRadius) friends++;
+          if (d < defR) friends++;
         } else if (d < st.radius + RULES.depotIgniteRadius * 0.5) {
           enemies++;
           if (r.type === 'lightcav') raidMul = Math.max(raidMul, 3);
@@ -1543,8 +1550,9 @@ export class World {
         if (st.stock <= 0) this.burnDown(st);
       }
       // 本陣佔領
-      if (st.kind === 'hq' && enemies > 15 && friends === 0) {
-        st.capture += dt / 20;
+      // 本陣佔領：至少 30 名敵兵、周圍沒有守軍，持續 30 秒
+      if (st.kind === 'hq' && enemies > 30 && friends === 0) {
+        st.capture += dt / 30;
         if (st.capture >= 1) {
           this.events.push({ k: 'msg', text: `${st.name}被攻陷！`, tone: st.team === this.player ? 'bad' : 'good' });
           this.burnDown(st);
@@ -1725,7 +1733,7 @@ export class World {
         return;
       }
     }
-    if (this.sc.holdTime && this.t >= this.sc.holdTime) this.finish(0);
+    if (this.sc.holdTime && this.t - ((this.flags.startT as number) ?? 0) >= this.sc.holdTime) this.finish(0);
   }
 
   finish(winner: number): void {
@@ -1747,6 +1755,17 @@ export class World {
         tr.run(this);
       }
     });
+  }
+
+  /** 援軍：戰鬥中途加入一批軍團 */
+  reinforce(team: number, specs: RegimentSpec[], text: string): void {
+    for (const rs of specs) {
+      const r = this.spawnRegiment(team, rs);
+      this.teams[team].initialStrength += r.alive;
+      if (team === this.player) r.visible = true;
+    }
+    this.hash.rebuild(this.s);
+    this.events.push({ k: 'msg', text, tone: team === this.player ? 'good' : 'bad' });
   }
 
   /** 倒戈：軍團改投對方（官渡張郃、高覽） */
