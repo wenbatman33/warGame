@@ -1,0 +1,177 @@
+// 官渡之戰・火燒烏巢（200 年）——招牌劇本：頂住數倍袁軍，派奇兵穿林燒烏巢
+import type { Scenario } from '../scenario';
+
+export const GUANDU: Scenario = {
+  id: 'guandu',
+  title: '官渡之戰',
+  subtitle: '火燒烏巢',
+  year: '建安五年（200 年）',
+  image: 'battle/battle_guandu',
+  intro: [
+    '袁紹擁兵十萬南下，曹操僅以數萬之眾據守官渡。兩軍相持數月，曹軍糧草將盡。',
+    '袁紹謀士許攸來投，獻上奇策：袁軍萬車糧草囤於烏巢，守將淳于瓊嗜酒輕敵。',
+    '主公，請頂住袁軍正面攻勢，同時派輕騎穿過東側密林，火燒烏巢！',
+  ],
+  goals: ['擊潰袁紹全軍', '焚燒烏巢糧倉，讓袁軍斷糧崩潰', '保護我軍本陣與後方糧倉'],
+  tip: '輕騎兵縱火速度是其他兵種的 3 倍。走東邊淺灘、穿過密林可以避開袁軍主力直撲烏巢。正面守住河岸：袁軍涉水時「半渡而擊」，受傷 +25%。',
+  time: 'dusk',
+  camera: { x: 0, z: 150, dist: 230, yaw: 0 },
+  map: {
+    play: 560,
+    seed: 200,
+    hills: [
+      { x: -120, z: 70, r: 55, h: 9, plateau: true },
+      { x: 110, z: -110, r: 60, h: 8, plateau: true },
+      { x: 250, z: -110, r: 50, h: 12 },
+      { x: -230, z: -60, r: 70, h: 14 },
+      { x: 60, z: 260, r: 60, h: 6 },
+    ],
+    rivers: [
+      {
+        pts: [
+          [-330, -10],
+          [-180, -30],
+          [-60, -5],
+          [60, -30],
+          [170, -10],
+          [330, -40],
+        ],
+        w: 24,
+        fords: [
+          { t: 0.2, w: 26 },
+          { t: 0.47, w: 36 },
+          { t: 0.9, w: 26 },
+        ],
+      },
+    ],
+    roads: [
+      {
+        pts: [
+          [-40, -280],
+          [-30, -150],
+          [-10, -60],
+          [5, -20],
+          [10, 80],
+          [0, 230],
+          [0, 300],
+        ],
+        w: 7,
+      },
+      {
+        pts: [
+          [215, -205],
+          [120, -215],
+          [20, -235],
+          [-40, -240],
+        ],
+        w: 6,
+      },
+      {
+        pts: [
+          [-170, 245],
+          [-80, 230],
+          [0, 215],
+        ],
+        w: 6,
+      },
+    ],
+    forests: [
+      // 東側密林：通往烏巢的隱蔽小徑
+      { x: 245, z: 45, r: 62 },
+      { x: 240, z: -70, r: 62 },
+      { x: 175, z: -135, r: 34, density: 0.85 },
+      { x: -250, z: 140, r: 60 },
+      { x: -60, z: -150, r: 30, density: 0.6 },
+      { x: 120, z: 150, r: 40, density: 0.7 },
+    ],
+    clearings: [
+      { x: 0, z: 210, r: 45 },
+      { x: -40, z: -235, r: 45 },
+      { x: 215, z: -205, r: 40 },
+      { x: -165, z: 245, r: 30 },
+      { x: -200, z: -250, r: 30 },
+    ],
+  },
+  teams: [
+    {
+      faction: 'wei',
+      name: '曹軍',
+      commander: 'caocao',
+      hq: { x: 0, z: 215, stock: 420, name: '官渡大營' },
+      depots: [{ x: -165, z: 248, stock: 900, name: '許都糧道' }],
+      deploy: { x: 0, z: 125, w: 440, d: 150 },
+      regiments: [
+        { type: 'guard', x: 0, z: 185, general: 'caocao', role: 'reserve' },
+        { type: 'guard', x: 140, z: 170, general: 'xuchu', name: '許褚虎衛' },
+        { type: 'sword', x: -70, z: 120, name: '青州兵' },
+        { type: 'sword', x: 40, z: 120, name: '中軍刀盾' },
+        { type: 'spear', x: -15, z: 122, name: '長槍營' },
+        { type: 'spear', x: 95, z: 124, name: '右翼長槍' },
+        { type: 'archer', x: -40, z: 150, name: '弓手營' },
+        { type: 'archer', x: 60, z: 150, name: '強弓營' },
+        { type: 'crossbow', x: -110, z: 80, name: '弩營' },
+        { type: 'lightcav', x: 170, z: 140, name: '輕騎甲' },
+        { type: 'lightcav', x: 200, z: 150, name: '輕騎乙' },
+        { type: 'heavycav', x: -170, z: 140, name: '虎豹騎' },
+      ],
+    },
+    {
+      faction: 'yuan',
+      name: '袁軍',
+      commander: 'yuanshao',
+      hq: { x: -40, z: -238, stock: 420, name: '袁紹大營' },
+      depots: [
+        { x: 218, z: -208, stock: 1600, main: true, name: '烏巢' },
+        { x: -205, z: -255, stock: 500, name: '陽武糧屯' },
+      ],
+      consume: 1.6,
+      ai: { plan: 'attack', aggression: 0.7, raid: true, startDelay: 25 },
+      regiments: [
+        { type: 'guard', x: -40, z: -200, general: 'yuanshao', role: 'reserve' },
+        { type: 'guard', x: 80, z: -130, general: 'zhanghe', name: '張郃部' },
+        { type: 'guard', x: -150, z: -120, general: 'gaolan', name: '高覽部' },
+        { type: 'sword', x: -120, z: -80, name: '冀州刀盾' },
+        { type: 'sword', x: -40, z: -85 },
+        { type: 'sword', x: 40, z: -85 },
+        { type: 'sword', x: 95, z: -80 },
+        { type: 'halberd', x: 0, z: -110, name: '大戟士' },
+        { type: 'halberd', x: -80, z: -110, name: '大戟士' },
+        { type: 'spear', x: -160, z: -95 },
+        { type: 'spear', x: 135, z: -95 },
+        { type: 'archer', x: -60, z: -135 },
+        { type: 'archer', x: 30, z: -135 },
+        { type: 'crossbow', x: 60, z: -150, name: '先登弩士' },
+        { type: 'lightcav', x: -220, z: -150, role: 'raider', name: '烏桓突騎' },
+        { type: 'lightcav', x: 110, z: -150 },
+        { type: 'heavycav', x: -200, z: -110 },
+        // 烏巢守軍：淳于瓊嗜酒輕敵，士氣低落
+        { type: 'guard', x: 200, z: -185, general: 'chunyuqiong', name: '淳于瓊部', role: 'guard', morale: 55 },
+        { type: 'sword', x: 240, z: -190, count: 90, role: 'guard', name: '烏巢守軍', morale: 50 },
+      ],
+    },
+  ],
+  stars: [
+    { text: '擊潰袁軍', check: (w) => w.winner === 0 },
+    { text: '開戰 6 分鐘內焚燒烏巢', check: (w) => typeof w.flags.wuchaoT === 'number' && (w.flags.wuchaoT as number) <= 360 },
+    { text: '我軍糧倉未失、傷亡少於五成', check: (w) => w.winner === 0 && w.teams[0].depotsBurnt === 0 && w.teams[0].dead + w.teams[0].fled < w.teams[0].initialStrength * 0.5 },
+  ],
+  triggers: [
+    {
+      // 烏巢焚毀 → 張郃、高覽倒戈
+      when: (w) => w.structs.some((s) => s.name === '烏巢' && s.burnt),
+      run: (w) => {
+        w.flags.wuchaoT = w.t - (w.flags.startT as number);
+        w.events.push({ k: 'msg', text: '烏巢糧草盡焚！袁軍軍心大亂', tone: 'gold' });
+        const defectors = w.regs.filter((r) => r.team === 1 && !r.gone && (r.general?.id === 'zhanghe' || r.general?.id === 'gaolan'));
+        if (defectors.length) {
+          setTimeout(() => w.events.push({ k: 'msg', text: '張郃、高覽率部歸降曹公！', tone: 'good' }), 0);
+          for (const r of defectors) w.defect(r.id);
+        }
+      },
+    },
+  ],
+  labels: [
+    { x: 218, z: -208, text: '烏巢' },
+    { x: 0, z: 215, text: '官渡' },
+  ],
+};

@@ -1,0 +1,218 @@
+// 戰場畫面：把模擬（World）畫出來——地形、水、植被、士兵、屍體、箭、營寨、輜重車、特效、地面標示
+import * as THREE from 'three';
+import { FACTIONS } from '../data/factions';
+import { animTime } from '../models/bake';
+import { ANIM_ORDER } from '../models/rig';
+import { buildDepot, buildHQ, buildCamp, buildWaterSource, propGeometry, propMaterial, propTime, type StructureVisual } from '../models/props';
+import { grassTuftGeometry, rockGeometry, treeGeometry } from '../models/trees';
+import { SState } from '../sim/soldiers';
+import type { Structure } from '../sim/structures';
+import { TICK, type GameEvent, type World } from '../sim/world';
+import { ArrowRenderer } from './arrows';
+import { Overlays } from './overlays';
+import { Particles } from './particles';
+import { SoldierRenderer } from './soldiers';
+import { LIGHT, Stage, type Quality } from './stage';
+import { buildTerrainMesh, heightTexture } from './terrain';
+import { buildVegetation, windTime } from './vegetation';
+import { buildWater, waterTime } from './water';
+
+interface StructView {
+  st: Structure;
+  vis: StructureVisual;
+  burntShown: boolean;
+  lastFrac: number;
+}
+
+export class BattleView {
+  readonly stage: Stage;
+  readonly soldiers: SoldierRenderer;
+  readonly overlays: Overlays;
+  readonly particles = new Particles();
+  private arrows: ArrowRenderer;
+  private structs: StructView[] = [];
+  private wagonMeshes = new Map<number, THREE.Mesh>();
+  private wagonGeo: THREE.BufferGeometry[] = [];
+  private teamColors: THREE.Color[];
+  private sunDir = new THREE.Vector3();
+  /** 渲染用遊戲時間（含插值） */
+  rt = 0;
+
+  constructor(
+    container: HTMLElement,
+    readonly world: World,
+    quality: Quality,
+  ) {
+    this.stage = new Stage(container, quality);
+    const sc = world.sc;
+    const hf = world.hf;
+    this.stage.scene.add(buildTerrainMesh(hf, sc.map.seed));
+    this.stage.scene.add(buildWater(hf, heightTexture(hf), this.sunDir));
+    const avoid = world.structs.map((s) => ({ x: s.x, z: s.z, r: s.radius + 6 }));
+    for (const ts of sc.teams) if (ts.deploy) avoid.push({ x: ts.deploy.x, z: ts.deploy.z, r: 0 });
+    const veg = buildVegetation(
+      hf,
+      sc.map.seed,
+      {
+        trees: [treeGeometry('broadleaf', 1), treeGeometry('pine', 2), treeGeometry('broadleaf', 3), treeGeometry('willow', 4)],
+        rocks: [rockGeometry(1), rockGeometry(2), rockGeometry(3)],
+        grass: [grassTuftGeometry(false), grassTuftGeometry(true)],
+      },
+      quality,
+      avoid,
+    );
+    this.stage.scene.add(veg.group);
+    this.teamColors = world.teams.map((t) => new THREE.Color(t.color));
+    this.soldiers = new SoldierRenderer({}, quality === 'low' ? 1200 : 3000);
+    this.stage.scene.add(this.soldiers.group);
+    this.arrows = new ArrowRenderer(4000);
+    this.stage.scene.add(this.arrows.mesh);
+    this.overlays = new Overlays(world);
+    this.stage.scene.add(this.overlays.group);
+    this.stage.scene.add(this.particles.group);
+    this.particles.resize(innerHeight);
+    addEventListener('resize', () => this.particles.resize(innerHeight));
+    // 營寨與糧倉
+    for (const st of world.structs) {
+      const f = FACTIONS[sc.teams[st.team].faction];
+      const vis =
+        st.kind === 'hq'
+          ? buildHQ({ team: f.color, flagText: f.flag, seed: st.id })
+          : st.kind === 'camp'
+            ? buildCamp({ team: f.color, flagText: f.flag, seed: st.id })
+            : st.kind === 'water'
+              ? buildWaterSource({ team: f.color, seed: st.id })
+              : buildDepot({ team: f.color, flagText: f.flag, main: st.main, seed: st.id });
+      vis.group.position.set(st.x, hf.height(st.x, st.z), st.z);
+      vis.group.rotation.y = st.team === 0 ? Math.PI : 0;
+      vis.group.updateMatrixWorld(true);
+      vis.setHeight?.((x, z) => hf.height(x, z));
+      vis.group.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+      this.stage.scene.add(vis.group);
+      this.structs.push({ st, vis, burntShown: false, lastFrac: 1 });
+    }
+    // 橋
+    for (const b of world.bridges) {
+      const g = propGeometry('bridge', { length: b.length });
+      const m = new THREE.Mesh(g, propMaterial);
+      m.position.set(b.x, 0, b.z);
+      m.rotation.y = b.angle - Math.PI / 2;
+      m.castShadow = m.receiveShadow = true;
+      this.stage.scene.add(m);
+    }
+    this.wagonGeo = world.teams.map((t) => propGeometry('wagon', { team: t.color }));
+  }
+
+  /** 模擬事件：屍體轉進屍體層 */
+  consumeEvents(events: GameEvent[]): void {
+    const w = this.world;
+    const s = w.s;
+    for (const ev of events) {
+      if (ev.k !== 'corpse') continue;
+      const i = ev.i;
+      this.soldiers.addCorpse(w.modelOf(i), s.x[i], w.groundY(s.x[i], s.z[i]), s.z[i], s.yaw[i], ANIM_ORDER[s.anim[i]], s.animStart[i], this.teamColors[s.team[i]], s.tint[i]);
+    }
+  }
+
+  /** 每幀：alpha＝模擬步之間的插值比例 */
+  render(alpha: number, dt: number, paused: boolean): void {
+    const w = this.world;
+    const s = w.s;
+    this.rt = w.t - TICK * (1 - alpha);
+    animTime.value = this.rt;
+    if (!paused) {
+      windTime.value += dt;
+      waterTime.value += dt;
+      propTime.value += dt;
+    }
+    const az = THREE.MathUtils.degToRad(LIGHT.sunAzimuth);
+    const el = THREE.MathUtils.degToRad(LIGHT.sunElevation);
+    this.sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+
+    // 士兵
+    const sr = this.soldiers;
+    sr.begin();
+    for (let i = 0; i < s.count; i++) {
+      const st = s.state[i];
+      if (st !== SState.Alive && st !== SState.Dying) continue;
+      const reg = w.regs[s.reg[i]];
+      if (reg.team !== w.player && !w.isVisibleTo(reg, w.player) && st === SState.Alive) continue;
+      const x = s.px[i] + (s.x[i] - s.px[i]) * alpha;
+      const z = s.pz[i] + (s.z[i] - s.pz[i]) * alpha;
+      let dy = s.yaw[i] - s.pyaw[i];
+      if (dy > Math.PI) dy -= Math.PI * 2;
+      if (dy < -Math.PI) dy += Math.PI * 2;
+      const yaw = s.pyaw[i] + dy * alpha;
+      sr.push(w.modelOf(i), x, w.groundY(x, z), z, yaw, ANIM_ORDER[s.anim[i]], s.animStart[i], s.animSpeed[i], this.teamColors[s.team[i]], s.tint[i]);
+    }
+    sr.end();
+    this.arrows.update(w.proj, this.rt);
+
+    // 營寨
+    for (const sv of this.structs) {
+      const st = sv.st;
+      if (Math.abs(st.frac - sv.lastFrac) > 0.01) {
+        sv.vis.setStock(st.frac);
+        sv.lastFrac = st.frac;
+      }
+      if (st.burnt && !sv.burntShown) {
+        sv.vis.setBurnt(true);
+        sv.burntShown = true;
+      }
+      if (!paused && (st.fire > 0 || st.burnt)) this.fireFx(sv, dt);
+    }
+    // 輜重車
+    for (const wg of w.wagons) {
+      let m = this.wagonMeshes.get(wg.id);
+      if (!wg.alive || wg.arrived) {
+        if (m) {
+          this.stage.scene.remove(m);
+          this.wagonMeshes.delete(wg.id);
+          if (!wg.alive) this.particles.emit('smoke', wg.x, w.groundY(wg.x, wg.z) + 1, wg.z, 8, 2);
+        }
+        continue;
+      }
+      if (!m) {
+        m = new THREE.Mesh(this.wagonGeo[wg.team], propMaterial);
+        m.castShadow = true;
+        this.stage.scene.add(m);
+        this.wagonMeshes.set(wg.id, m);
+      }
+      const x = wg.px + (wg.x - wg.px) * alpha;
+      const z = wg.pz + (wg.z - wg.pz) * alpha;
+      m.position.set(x, w.groundY(x, z), z);
+      m.rotation.y = wg.yaw;
+      m.visible = wg.team === w.player || this.nearPlayer(x, z);
+    }
+    if (!paused) this.particles.update(dt);
+  }
+
+  private nearPlayer(x: number, z: number): boolean {
+    for (const r of this.world.regs) if (r.team === this.world.player && !r.gone && Math.hypot(r.mx - x, r.mz - z) < 150) return true;
+    return false;
+  }
+
+  private fireAcc = 0;
+  private fireFx(sv: StructView, dt: number): void {
+    const st = sv.st;
+    this.fireAcc += dt;
+    const anchors = sv.vis.fireAnchors;
+    const g = sv.vis.group;
+    const v = new THREE.Vector3();
+    const intensity = st.burnt ? 0.35 : st.fire;
+    for (const a of anchors) {
+      if (Math.random() > intensity * 0.9 + 0.1) continue;
+      v.copy(a).applyMatrix4(g.matrixWorld);
+      if (!st.burnt || Math.random() < 0.3) this.particles.emit('fire', v.x, v.y, v.z, Math.ceil(2 * intensity), 2.5, 0.8 + intensity);
+      if (Math.random() < 0.35) this.particles.emit('smoke', v.x, v.y + 3, v.z, 1, 3, 1 + intensity);
+      if (Math.random() < 0.15) this.particles.emit('ember', v.x, v.y + 1, v.z, 2, 2);
+    }
+    // 焚毀後的大煙柱（全地圖可見）
+    if (st.burnt && Math.random() < 0.5) this.particles.emit('smoke', st.x, this.world.hf.height(st.x, st.z) + 4, st.z, 1, 6, 2.2);
+  }
+}

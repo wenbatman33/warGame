@@ -1,3 +1,11 @@
-// 進入點（M0 骨架）
+// 進入點
+import './ui/style.css';
+
 const app = document.getElementById('app')!;
-app.textContent = '千軍令 — 開發中';
+const params = new URLSearchParams(location.search);
+
+if (params.get('view') === 'models') {
+  import('./dev/modelViewer').then((m) => m.startModelViewer(app));
+} else {
+  import('./game/boot').then((m) => m.boot(app));
+}

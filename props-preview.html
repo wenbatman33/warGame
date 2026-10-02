@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>千軍令 — 道具預覽</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd3f0; font-family: 'Noto Sans TC', sans-serif; }
+      #ui { position: fixed; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: 70vw; z-index: 2; }
+      #ui button { font: 700 13px 'Noto Sans TC', sans-serif; padding: 6px 10px; border-radius: 8px; border: 2px solid #3b2a14; background: #f7d77c; color: #3b2a14; cursor: pointer; box-shadow: 0 2px 0 #3b2a14; }
+      #ui label { font: 700 13px 'Noto Sans TC', sans-serif; background: #fff8e6; border: 2px solid #3b2a14; border-radius: 8px; padding: 4px 8px; display: flex; gap: 6px; align-items: center; }
+      #stats { position: fixed; right: 10px; top: 10px; background: rgba(255, 248, 230, 0.92); border: 2px solid #3b2a14; border-radius: 8px; padding: 8px 10px; font: 12px/1.45 ui-monospace, monospace; max-height: 90vh; overflow: auto; z-index: 2; white-space: pre; }
+    </style>
+  </head>
+  <body>
+    <div id="ui"></div>
+    <div id="stats"></div>
+    <script type="module" src="/src/dev/propsPreview.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2a3a; }
+body { font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif; color: #fff; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+#app { position: fixed; inset: 0; }
