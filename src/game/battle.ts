@@ -7,6 +7,7 @@ import { RtsCamera } from '../input/camera';
 import { Controls } from '../input/controls';
 import { generateHeightfield } from '../map/mapgen';
 import { BattleView } from '../render/battleView';
+import { soldierLook } from '../render/soldiers';
 import type { Quality } from '../render/stage';
 import { TICK, World, type GameEvent } from '../sim/world';
 import { Hud } from '../ui/hud';
@@ -126,6 +127,17 @@ export class Battle {
     this.hud.refreshTime();
   }
 
+  /** 測試用：不推進模擬，畫一幀（含 HUD） */
+  debugFrame(): void {
+    this.cam.update(0.5);
+    soldierLook.scale.value = 1 + Math.min(1, Math.max(0, (this.cam.dist - 90) / 320)) * 0.5;
+    this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
+    this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[this.world.player].deploy : null);
+    this.view.render(1, 0.016, false);
+    this.view.stage.render();
+    this.hud.update(0.25);
+  }
+
   /** 測試用：同步快轉模擬 n 秒（分頁在背景時 rAF 不跑） */
   simulate(seconds: number): void {
     const w = this.world;
@@ -163,6 +175,7 @@ export class Battle {
     if (steps >= 8) this.acc = 0;
     this.controls.update(raw);
     this.cam.update(raw);
+    soldierLook.scale.value = 1 + Math.min(1, Math.max(0, (this.cam.dist - 90) / 320)) * 0.5;
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
     const alpha = this.acc / TICK;
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[w.player].deploy : null);

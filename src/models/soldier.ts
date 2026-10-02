@@ -59,7 +59,7 @@ const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /** 人形（綁定姿勢：站直、雙臂下垂、面向 +Z） */
 function human(mb: ModelBuilder, o: HumanOpts): void {
-  const armorTint = o.armor === 'light' ? 0 : o.armor === 'medium' ? 0.38 : 0.3;
+  const armorTint = o.armor === 'light' ? 0 : o.armor === 'medium' ? 0.45 : 0.36;
   const vestCol = o.armor === 'light' ? COL.leather : COL.lamellar;
   // 腿
   for (const s of [1, -1]) {

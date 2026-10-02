@@ -63,13 +63,13 @@ export const UNITS: Record<UnitTypeId, UnitDef> = {
   },
   archer: {
     id: 'archer', name: '弓兵', short: '弓兵', model: 'archer', count: 80, hp: 70, atk: 5, def: 3, walk: 3.0, run: 5.2, mounted: false,
-    ranged: { dmg: 9, range: 135, reload: 4.2, ammo: 30, arc: 'high', ap: 0 },
+    ranged: { dmg: 11, range: 135, reload: 6, ammo: 30, arc: 'high', ap: 0 },
     charge: 0, reach: 1.4, vsCav: 1, shield: 0, spacing: [1.05, 1.3], width: 20, morale: 60, rate: 1.4, icon: '🏹',
     desc: '拋射箭雨可越過前排，射程最遠；肉搏很弱，要有人保護。可射火矢點燃糧倉。',
   },
   crossbow: {
     id: 'crossbow', name: '弩兵', short: '弩兵', model: 'crossbow', count: 80, hp: 75, atk: 5, def: 4, walk: 2.8, run: 4.8, mounted: false,
-    ranged: { dmg: 17, range: 105, reload: 6.0, ammo: 20, arc: 'flat', ap: 0.5 },
+    ranged: { dmg: 22, range: 105, reload: 7.5, ammo: 20, arc: 'flat', ap: 0.5 },
     charge: 0, reach: 1.4, vsCav: 1, shield: 0, spacing: [1.05, 1.3], width: 20, morale: 62, rate: 1.4, icon: '🎯',
     desc: '平射破甲，傷害高但裝填慢、射程較短。',
   },
@@ -85,7 +85,7 @@ export const UNITS: Record<UnitTypeId, UnitDef> = {
   },
   horsearcher: {
     id: 'horsearcher', name: '騎射手', short: '騎射', model: 'horsearcher', count: 40, hp: 110, atk: 6, def: 4, walk: 6.0, run: 10.5, mounted: true,
-    ranged: { dmg: 8, range: 100, reload: 3.6, ammo: 24, arc: 'flat', ap: 0 },
+    ranged: { dmg: 10, range: 100, reload: 5, ammo: 24, arc: 'flat', ap: 0 },
     charge: 6, reach: 2.2, vsCav: 1, shield: 0, spacing: [1.95, 2.9], width: 10, morale: 64, rate: 1.0, icon: '🐴',
     desc: '機動射手，邊走邊射、打了就跑。',
   },

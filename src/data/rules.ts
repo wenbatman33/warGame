@@ -1,7 +1,11 @@
 // 全域規則數值（docs/02 §3–5、docs/03）；DEV 工具可即時調整並匯出
 export const RULES = {
   // 戰鬥
-  hitBase: 0.55,
+  hitBase: 0.44,
+  /** 近戰傷害倍率（攻擊 × 倍率） */
+  meleeDmg: 0.65,
+  /** 肉搏中的士氣持續流失（依兵力比放大） */
+  meleeDrain: 0.32,
   hitPerPoint: 0.02,
   flankMul: 1.3,
   rearMul: 1.6,
@@ -14,8 +18,10 @@ export const RULES = {
   tether: 14,
   arrowMoraleHit: 1,
   // 士氣
-  moralePerLossPct: 0.8,
+  moralePerLossPct: 0.9,
   heavyLossShock: 10,
+  /** 10 秒內損失超過此比例 → 驚嚇 */
+  heavyLossPct: 0.15,
   flankDrain: 2,
   rearDrain: 4,
   chargeShock: 8,
@@ -35,11 +41,12 @@ export const RULES = {
   maxRouts: 3,
   fireDrain: 2,
   // 體力
-  staminaRun: 2,
-  staminaCharge: 4,
-  staminaFight: 1,
-  staminaWalk: 0.2,
-  staminaRest: 1.5,
+  staminaRun: 1.2,
+  staminaRunCav: 0.6,
+  staminaCharge: 2.5,
+  staminaFight: 0.8,
+  staminaWalk: 0.1,
+  staminaRest: 2,
   // 糧草（docs/03）
   hqConsumePerSoldier: 0.0015,
   wagonInterval: 40,
@@ -52,6 +59,11 @@ export const RULES = {
   depotMainShock: 25,
   allDepotsShock: 10,
   supplyRadius: 120,
+  /** 軍心大亂（主糧倉被焚）：持續秒數、士氣上限、每秒流失、攻擊倍率 */
+  panicTime: 90,
+  panicCap: 45,
+  panicDrain: 0.35,
+  panicAtk: 0.8,
   // 計策
   commandRegen: 8,
   commandMax: 10,

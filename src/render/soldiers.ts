@@ -23,25 +23,34 @@ interface ModelSet {
 
 const SOLDIER_SCALE = 1.0;
 
+/** 遠景放大士兵（RTS 常用的可讀性技巧）與隊伍色自發光 */
+export const soldierLook = { scale: { value: 1 }, glow: { value: 0.07 } };
+
 function makeMaterial(baked: BakedModel): { mat: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial } {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.05 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uBat = { value: baked.texture };
     sh.uniforms.uAnimTime = animTime;
+    sh.uniforms.uSoldierScale = soldierLook.scale;
+    sh.uniforms.uTeamGlow = soldierLook.glow;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>\n${BAT_DECL}\nattribute float aMask;\nattribute vec3 aTeam;\nattribute float aTint;`)
-      .replace('#include <color_vertex>', '#include <color_vertex>\n  vColor.rgb = mix(vColor.rgb * (0.8 + 0.4 * aTint), aTeam, aMask);')
+      .replace('#include <common>', `#include <common>\n${BAT_DECL}\nattribute float aMask;\nattribute vec3 aTeam;\nattribute float aTint;\nuniform float uSoldierScale;\nvarying vec4 vTeamMask;`)
+      .replace('#include <color_vertex>', '#include <color_vertex>\n  vColor.rgb = mix(vColor.rgb * (0.8 + 0.4 * aTint), aTeam, aMask);\n  vTeamMask = vec4(aTeam, aMask);')
       .replace('#include <beginnormal_vertex>', 'mat4 batM = batMatrix();\n  vec3 objectNormal = mat3(batM) * normal;')
-      .replace('#include <begin_vertex>', 'vec3 transformed = (batM * vec4(position, 1.0)).xyz;');
+      .replace('#include <begin_vertex>', 'vec3 transformed = (batM * vec4(position, 1.0)).xyz * uSoldierScale;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTeamGlow;\nvarying vec4 vTeamMask;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vTeamMask.rgb * vTeamMask.a * uTeamGlow;');
   };
   mat.customProgramCacheKey = () => 'bat-std';
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   depth.onBeforeCompile = (sh) => {
     sh.uniforms.uBat = { value: baked.texture };
     sh.uniforms.uAnimTime = animTime;
+    sh.uniforms.uSoldierScale = soldierLook.scale;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>\n${BAT_DECL}`)
-      .replace('#include <begin_vertex>', 'mat4 batM = batMatrix();\n  vec3 transformed = (batM * vec4(position, 1.0)).xyz;');
+      .replace('#include <common>', `#include <common>\n${BAT_DECL}\nuniform float uSoldierScale;`)
+      .replace('#include <begin_vertex>', 'mat4 batM = batMatrix();\n  vec3 transformed = (batM * vec4(position, 1.0)).xyz * uSoldierScale;');
   };
   depth.customProgramCacheKey = () => 'bat-depth';
   return { mat, depth };

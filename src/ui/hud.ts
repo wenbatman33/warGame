@@ -256,6 +256,7 @@ export class Hud {
     else if (r.engagedWith.size > 0) s += '⚔';
     else if (r.wavering) s += '⚠';
     if (t.supply !== 'ok' && !r.routing) s += SUPPLY_EFFECTS[t.supply].icon;
+    if (t.panicUntil > this.b.world.t && !r.routing) s += '😱';
     if (r.terrain.high) s += '⛰';
     if (r.terrain.forest) s += '🌲';
     if (r.terrain.wet) s += '🌊';
@@ -612,6 +613,11 @@ export class Hud {
         if (ev.state === 'ok') break;
         const desc = ev.state === 'starving' ? '攻擊 −30%、防禦 −20%、移動 −20%，動搖部隊開始逃亡' : '攻擊 −10%、體力回復變慢、士氣上限 75';
         this.toast(`${e.icon} ${t.name}${e.name}！${desc}`, mine(ev.team) ? 'bad' : 'good', true);
+        break;
+      }
+      case 'panic': {
+        const t = w.teams[ev.team];
+        this.toast(`😱 ${t.name}軍心大亂！90 秒內攻擊 −20%、士氣只降不升`, mine(ev.team) ? 'bad' : 'gold');
         break;
       }
       case 'wagonLost':

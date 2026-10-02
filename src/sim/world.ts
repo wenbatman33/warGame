@@ -35,6 +35,7 @@ export type GameEvent =
   | { k: 'ability'; reg: number; name: string }
   | { k: 'msg'; text: string; tone: 'good' | 'bad' | 'info' | 'gold' }
   | { k: 'defect'; reg: number }
+  | { k: 'panic'; team: number }
   | { k: 'stratagem'; team: number; id: StratagemId; x: number; z: number }
   | { k: 'end'; winner: number };
 
@@ -53,6 +54,8 @@ export interface TeamState {
   consume: number;
   depotsBurnt: number;
   wagonsLost: number;
+  /** 軍心大亂（主糧倉被焚）持續到此時間 */
+  panicUntil: number;
 }
 
 const _slot: [number, number] = [0, 0];
@@ -111,6 +114,7 @@ export class World {
         consume: ts.consume ?? 1,
         depotsBurnt: 0,
         wagonsLost: 0,
+        panicUntil: -1,
       };
       this.teams.push(team);
       if (ts.hq) {
@@ -397,7 +401,7 @@ export class World {
 
   speedOf(r: Regiment, run: boolean): number {
     const u = r.unit;
-    let sp = run && r.stamina > 10 ? u.run : u.walk;
+    let sp = run ? (r.stamina > 10 ? u.run : u.walk + (u.run - u.walk) * 0.5) : u.walk;
     sp *= SUPPLY_EFFECTS[this.teams[r.team].supply].speed;
     if (r.stamina < 30) sp *= 0.8;
     if (r.formation === 'square') sp *= 0.85;
@@ -447,7 +451,7 @@ export class World {
         this.turnToward(r, face, dt);
       } else {
         const contact = r.depth() / 2 + tr.depth() / 2 + (r.unit.mounted ? -2 : 1.2);
-        if (r.unit.mounted && d < 80) wantRun = true; // 衝鋒
+        if (r.unit.mounted && d < 80) wantRun = r.run = true; // 衝鋒
         if (d > contact) {
           moving = this.moveAnchorToward(r, tr.mx - Math.sin(face) * contact * 0.5, tr.mz - Math.cos(face) * contact * 0.5, dt, wantRun, 1.0);
           if (d < 40) this.turnToward(r, face, dt);
@@ -488,7 +492,7 @@ export class World {
     const tireless = r.hasBuff('tireless', this.t);
     let ds = 0;
     if (r.engagedWith.size > 0) ds -= RULES.staminaFight;
-    else if (moving) ds -= wantRun ? (r.unit.mounted && o.type === 'attack' ? RULES.staminaCharge : RULES.staminaRun) : RULES.staminaWalk;
+    else if (moving) ds -= wantRun ? (r.unit.mounted ? (o.type === 'attack' && o.target >= 0 ? RULES.staminaCharge : RULES.staminaRunCav) : RULES.staminaRun) : RULES.staminaWalk;
     else ds += RULES.staminaRest * SUPPLY_EFFECTS[this.teams[r.team].supply].stamina;
     if (tireless && ds < 0) ds = 0;
     r.stamina = Math.max(0, Math.min(100, r.stamina + ds * dt));
@@ -697,7 +701,7 @@ export class World {
           if (d > reach * 0.9) {
             tx = ex;
             tz = ez;
-            maxSp = u.run * 0.8;
+            maxSp = u.mounted && r.run ? this.speedOf(r, true) : u.run * 0.8;
           } else {
             tx = s.x[i];
             tz = s.z[i];
@@ -718,7 +722,9 @@ export class World {
       let dvx = 0;
       let dvz = 0;
       if (d > 0.15) {
-        const sp = Math.min(maxSp, d * (u.mounted ? 1.2 : 2.5));
+        // 騎兵衝鋒中朝敵人全速撞上去（不做到達減速）
+        const charging = u.mounted && r.run && r.order.type === 'attack' && s.target[i] >= 0;
+        const sp = charging ? maxSp : Math.min(maxSp, d * (u.mounted ? 1.2 : 2.5));
         dvx = (dx / d) * sp;
         dvz = (dz / d) * sp;
       }
@@ -790,9 +796,11 @@ export class World {
       return -1;
     }
     if (tg >= 0 && (this.tick + i) % 20 !== 0) return tg;
-    // 重找：攻擊命令時範圍較大；移動中只自衛
+    // 重找：攻擊命令時範圍較大；移動中只自衛。步兵只有前兩排主動出擊，後排只打貼身的敵人（戰線才像戰線）
     const attacking = r.order.type === 'attack' || r.order.type === 'idle';
-    const rad = attacking ? RULES.engageRadius + (r.unit.mounted ? 3 : 0) : 2.5;
+    const row = r.formation === 'wedge' || r.unit.mounted || s.general[i] ? 0 : Math.floor(Math.max(0, s.slot[i]) / Math.max(1, r.width));
+    const front = row < 2 || r.formation === 'loose';
+    const rad = attacking && front ? RULES.engageRadius + (r.unit.mounted ? 3 : 0) : 2.2;
     const n = this.hash.near(s.x[i], s.z[i], rad);
     let best = -1;
     let bd = rad * rad;
@@ -829,15 +837,24 @@ export class World {
     r.lastCombatT = er.lastCombatT = t;
     r.engagedWith.add(er.id);
     er.engagedWith.add(r.id);
-    // 方位
-    const toAtt = Math.atan2(s.x[i] - s.x[j], s.z[i] - s.z[j]);
-    const rel = Math.abs(angDiff(s.yaw[j], toAtt));
+    // 方位：攻擊者在防守軍團陣形的哪一面（區域座標：前方 +lz、側向 lx）
+    const fc = Math.cos(er.facing);
+    const fs = Math.sin(er.facing);
+    const ox = s.x[i] - er.mx;
+    const oz = s.z[i] - er.mz;
+    const lx = ox * fc - oz * fs;
+    const lz = ox * fs + oz * fc;
+    const halfW = er.frontage() / 2;
+    const halfD = er.depth() / 2;
+    const rearHit = lz < -halfD * 0.4 && !er.unit.mounted;
+    const flankHit = !rearHit && Math.abs(lx) > halfW + 0.5 && lz < halfD * 0.4 && !er.unit.mounted;
+    const rel = rearHit ? 3 : flankHit ? 1.5 : 0;
     const side = er.formation === 'square' ? 0.5 : 1;
     let dirMul = 1;
-    if (rel > 2.2) {
+    if (rearHit) {
       dirMul = 1 + (RULES.rearMul - 1) * side;
       er.rearHits++;
-    } else if (rel > 1.1 && !er.hasBuff('steady', t) && !er.buffs.some((b) => b.id === 'swift' && b.until > t)) {
+    } else if (flankHit && !er.hasBuff('steady', t) && !er.buffs.some((b) => b.id === 'swift' && b.until > t)) {
       dirMul = 1 + (RULES.flankMul - 1) * side;
       er.flankHits++;
     }
@@ -854,9 +871,10 @@ export class World {
       if (this.rng() < 0.15) this.events.push({ k: 'clash', x: s.x[j], z: s.z[j] });
       return;
     }
-    let dmg = atk * 1.5 * (0.8 + this.rng() * 0.4) * dirMul;
+    let dmg = atk * RULES.meleeDmg * (0.8 + this.rng() * 0.4) * dirMul;
     if (eu.mounted) dmg *= u.vsCav;
     dmg *= this.moraleAtkMul(r) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk / SUPPLY_EFFECTS[this.teams[er.team].supply].def;
+    if (this.teams[r.team].panicUntil > t) dmg *= RULES.panicAtk;
     if (r.stamina < 30) dmg *= 0.85;
     if (er.routing && u.mounted) dmg *= RULES.pursuitMul;
     // 地形：高低差、涉水（半渡而擊）、森林中的騎兵、己方營寨
@@ -958,7 +976,7 @@ export class World {
     const flat = rd.arc === 'flat';
     const dur = flat ? 0.12 + dist / 85 : 0.9 + dist / 48;
     // 前置量＋散布
-    const spread = dist * (flat ? 0.025 : 0.045) * (r.stamina < 30 ? 1.3 : 1);
+    const spread = dist * (flat ? 0.03 : 0.06) * (r.stamina < 30 ? 1.3 : 1);
     const ax = s.x[j] + s.vx[j] * dur + this.gauss() * spread;
     const az = s.z[j] + s.vz[j] * dur + this.gauss() * spread;
     const sy = this.groundY(s.x[i], s.z[i]) + 1.5;
@@ -1006,15 +1024,16 @@ export class World {
       if (best >= 0) {
         const er = this.regs[s.reg[best]];
         const eu = er.unit;
-        let dmg = p.dmg[k] * (0.8 + this.rng() * 0.4);
+        // 箭傷兩極：兩成是致命傷（×5），其餘輕傷（×0.5）
+        let dmg = p.dmg[k] * (this.rng() < 0.2 ? 5 : 0.5);
         const armor = (s.general[best] ? 15 : eu.def) * (1 - p.ap[k]);
-        dmg *= 1 - Math.min(0.6, armor * 0.035);
-        // 盾牌正面擋箭
+        dmg *= 1 - Math.min(0.6, armor * 0.03);
+        // 盾牌正面擋箭：機率整支擋下（弩箭破甲較能穿盾）
         const fromA = Math.atan2(p.sx[k] - x, p.sz[k] - z);
         const front = Math.abs(angDiff(s.yaw[best], fromA)) < 1.0;
         let shielded = false;
-        if (front && eu.shield > 0 && !s.fighting[best]) {
-          dmg *= 1 - eu.shield;
+        if (front && eu.shield > 0 && !s.fighting[best] && this.rng() < eu.shield * (1 - p.ap[k] * 0.5)) {
+          dmg = 0;
           shielded = true;
         }
         if (er.formation === 'loose') dmg *= 0.6;
@@ -1022,7 +1041,7 @@ export class World {
         if (s.team[best] === p.team[k]) dmg *= RULES.friendlyFireMul;
         er.arrowsTaken++;
         hit = shielded ? 2 : 1;
-        this.damage(best, dmg, -1);
+        if (dmg > 0) this.damage(best, dmg, -1);
       }
       if (p.fire[k]) this.fireArrowLand(x, z, p.team[k]);
       this.events.push({ k: 'impact', x, z, hit, fire: !!p.fire[k] });
@@ -1131,7 +1150,7 @@ export class World {
         r.lostThisTick = 0;
       }
       while (r.losses.length && r.losses[0] < t - 10) r.losses.shift();
-      if (r.losses.length > r.initial * 0.1 && !r.flagsHeavy) {
+      if (r.losses.length > r.initial * RULES.heavyLossPct && !r.flagsHeavy) {
         dm -= RULES.heavyLossShock;
         r.flagsHeavy = true;
       } else if (r.losses.length < r.initial * 0.05) r.flagsHeavy = false;
@@ -1143,22 +1162,29 @@ export class World {
         dm -= Math.min(2, r.arrowsTaken * 0.06) * RULES.arrowMoraleHit;
         r.arrowsTaken = 0;
       }
-      // 局部劣勢
+      // 肉搏壓力＋局部劣勢
       if (r.engagedWith.size > 0) {
         let enemy = 0;
         for (const id of r.engagedWith) enemy += this.regs[id].alive;
+        const ratio = enemy / Math.max(1, r.alive);
+        dm -= RULES.meleeDrain * Math.min(2.5, Math.max(0.4, ratio)) * dt;
         if (enemy > r.alive * 2) dm -= RULES.outnumberDrain * dt;
       }
-      // 武將光環
+      // 武將光環：回復到「基礎＋10」為止
       const aura = this.generalAura(r);
-      if (aura > 0) dm += RULES.generalAuraRegen * aura * dt;
+      if (aura > 0 && r.morale < r.baseMorale + 10 && !(this.teams[r.team].panicUntil > t)) dm += RULES.generalAuraRegen * aura * dt;
+      // 高於基礎太多會慢慢回落（勝勢的亢奮不會永久）
+      if (r.morale > r.baseMorale + 15) dm -= 0.4 * dt;
       // 火
       if (this.fireNear(r.mx, r.mz, 25)) dm -= RULES.fireDrain * dt;
       // 糧況
       dm -= eff.moraleDrain * dt;
+      // 軍心大亂：持續流失、不回復
+      const panic = team.panicUntil > t;
+      if (panic) dm -= RULES.panicDrain * dt;
       // 平靜回復
       const calm = t - r.lastCombatT > 6 && t - (r.chargeShockT ?? 0) > 6;
-      if (calm && !r.routing) {
+      if (calm && !r.routing && !panic) {
         const target = Math.min(r.baseMorale + (aura > 0 ? 10 : 0), eff.moraleCap);
         if (r.morale < target) dm += RULES.idleRegen * dt;
       }
@@ -1168,7 +1194,8 @@ export class World {
       if (r.terrain.camp && !r.routing) dm += RULES.campMorale * dt;
       if (steady && dm < 0) dm = 0;
       if (r.general?.alive && r.hasBuff('steady', t)) dm = Math.max(0, dm);
-      r.morale = Math.max(0, Math.min(Math.max(eff.moraleCap + (aura > 0 ? 10 : 0), 0), r.morale + dm, 100));
+      const cap = panic ? Math.min(eff.moraleCap, RULES.panicCap) : eff.moraleCap + (aura > 0 ? 10 : 0);
+      r.morale = Math.max(0, Math.min(cap, r.morale + dm, 100));
 
       // 狀態轉換
       if (!r.routing && r.morale < RULES.routThreshold && !r.unbreakable && !steady) this.rout(r);
@@ -1262,8 +1289,9 @@ export class World {
       const water = team.depots.find((d) => d.kind === 'water');
       let state: SupplyState = 'ok';
       const f = hq.burnt ? 0 : hq.frac;
+      const mainLost = team.depots.some((d) => d.main && d.burnt);
       if (f <= 0.1) state = 'starving';
-      else if (f <= 0.4 || (hasDepots && !depotsAlive)) state = 'low';
+      else if (f <= 0.4 || (hasDepots && !depotsAlive) || mainLost) state = 'low';
       // 水源被敵軍控制 → 斷水
       if (water && water.team !== team.index) state = f > 0.25 ? 'low' : 'starving';
       if (state !== team.supply) {
@@ -1387,6 +1415,12 @@ export class World {
       if (r.gone) continue;
       if (r.team === st.team) r.morale -= shock;
       else r.morale = Math.min(100, r.morale + 5);
+    }
+    // 主糧倉／本陣被焚：軍心大亂 90 秒、前線存糧減半
+    if (st.main || st.kind === 'hq') {
+      team.panicUntil = this.t + RULES.panicTime;
+      if (team.hq && team.hq !== st) team.hq.stock *= 0.5;
+      this.events.push({ k: 'panic', team: st.team });
     }
     const anyLeft = team.depots.some((d) => d.kind !== 'water' && !d.burnt);
     if (!anyLeft && team.depots.some((d) => d.kind !== 'water')) {
