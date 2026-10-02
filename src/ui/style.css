@@ -2,3 +2,7 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2a3a; }
 body { font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif; color: #fff; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 #app { position: fixed; inset: 0; }
+
+#rotate { display: none; position: fixed; inset: 0; z-index: 999; background: #1b120a; color: #ffd35e; font: 900 22px 'Noto Sans TC', sans-serif; text-align: center; padding-top: 38vh; line-height: 1.6; }
+#rotate small { font-size: 13px; color: #d8c8a8; font-weight: 500; }
+@media (orientation: portrait) and (max-width: 600px) { #rotate { display: block; } }
