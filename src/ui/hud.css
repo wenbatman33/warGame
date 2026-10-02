@@ -190,3 +190,7 @@ body.picking canvas { cursor: crosshair; }
 .reginfo .row small { color: #aaa; font-size: 11px; }
 .reginfo .row.t { display: block; font-size: 11px; color: #ffe9a8; margin-top: 3px; line-height: 1.4; }
 @media (max-width: 820px), (max-height: 500px) { .reginfo { display: none !important; } }
+
+.card.allbtn { width: 46px; background: linear-gradient(#8a8278, #56504a); }
+.card.allbtn .ico { font-size: 22px; top: 12px; }
+.card.allbtn .nm { top: 52px; }

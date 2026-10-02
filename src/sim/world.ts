@@ -36,6 +36,7 @@ export type GameEvent =
   | { k: 'msg'; text: string; tone: 'good' | 'bad' | 'info' | 'gold' }
   | { k: 'defect'; reg: number }
   | { k: 'panic'; team: number }
+  | { k: 'chargeStart'; reg: number }
   | { k: 'stratagem'; team: number; id: StratagemId; x: number; z: number }
   | { k: 'end'; winner: number };
 
@@ -479,6 +480,10 @@ export class World {
         if (r.unit.mounted && d < 80) {
           wantRun = r.run = true; // 衝鋒
           charging = true;
+          if (this.t - r.chargeCallT > 20 && r.engagedWith.size === 0) {
+            r.chargeCallT = this.t;
+            this.events.push({ k: 'chargeStart', reg: r.id });
+          }
         }
         if (d > contact) {
           moving = this.moveAnchorToward(r, tr.mx - Math.sin(face) * contact * 0.5, tr.mz - Math.cos(face) * contact * 0.5, dt, wantRun, 1.0);

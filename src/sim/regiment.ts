@@ -81,6 +81,8 @@ export class Regiment {
   rearHits = 0;
   arrowsTaken = 0;
   chargeShockT = -99;
+  /** 上次喊衝鋒（號角）的時間 */
+  chargeCallT = -99;
   lastCombatT = -99;
   lastFireT = -99;
   /** 正在射擊的目標 */

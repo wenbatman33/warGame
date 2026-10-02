@@ -332,6 +332,8 @@ export class Battle {
     this.hud.dispose();
     this.view.stage.renderer.domElement.remove();
     this.view.stage.renderer.dispose();
+    // 立刻釋放 GPU 記憶體（連打多場不累積）
+    this.view.stage.renderer.forceContextLoss();
     audio.setAmbience({ melee: 0, cavalry: 0, marching: 0, fire: 0 });
     this.opts.onExit(result);
   }

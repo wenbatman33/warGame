@@ -198,6 +198,13 @@ export class Hud {
       strats.appendChild(s);
       this.stratEls.set(id, s);
     }
+    const all = el('div', 'card allbtn', '<div class="ico">⚔</div><div class="nm stroke">全軍</div>');
+    all.title = '選取全軍（Ctrl＋A）';
+    all.onclick = () => {
+      audio.unlock();
+      b.controls.select(w.regs.filter((r) => r.team === w.player && !r.gone && !r.routing).map((r) => r.id));
+    };
+    this.cardsEl.prepend(all);
     bottom.append(this.cardsEl, strats);
     root.appendChild(bottom);
 
@@ -650,7 +657,12 @@ export class Hud {
 
   // ───────────── 事件 ─────────────
 
+  private recentToasts = new Map<string, number>();
   toast(text: string, tone: 'good' | 'bad' | 'info' | 'gold' = 'info', small = false, onClick?: () => void): void {
+    // 同樣的訊息 5 秒內不重複
+    const now = performance.now();
+    if ((this.recentToasts.get(text) ?? -1e9) > now - 5000) return;
+    this.recentToasts.set(text, now);
     const t = el('div', `toast stroke ${tone}${small ? ' small' : ''}${onClick ? ' click' : ''}`, text);
     if (onClick) {
       t.style.pointerEvents = 'auto';
@@ -724,6 +736,14 @@ export class Hud {
         this.toast(`${e.icon} ${t.name}${e.name}！${desc}`, mine(ev.team) ? 'bad' : 'good', true);
         break;
       }
+      case 'chargeStart': {
+        const r = w.regs[ev.reg];
+        if (!mine(r.team) && !w.isVisibleTo(r, w.player)) break;
+        audio.play('horn_charge', this.b.sndPos(r.mx, r.mz));
+        audio.play('war_cry', { ...this.b.sndPos(r.mx, r.mz), volume: 0.7 });
+        if (mine(r.team)) this.say('ack_charge');
+        break;
+      }
       case 'panic': {
         const t = w.teams[ev.team];
         this.toast(`😱 ${t.name}軍心大亂！90 秒內攻擊 −20%、士氣只降不升`, mine(ev.team) ? 'bad' : 'gold');
@@ -734,7 +754,7 @@ export class Hud {
         break;
       case 'ability': {
         const r = w.regs[ev.reg];
-        this.toast(`${r.general?.name ?? r.name}：「${ev.name}」！`, mine(r.team) ? 'gold' : 'bad');
+        this.toast(`${r.general?.name ?? r.name}：「${ev.name}」！`, mine(r.team) ? 'gold' : 'bad', !mine(r.team));
         audio.play('war_cry', this.b.sndPos(r.mx, r.mz));
         break;
       }
