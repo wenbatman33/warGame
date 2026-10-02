@@ -50,7 +50,7 @@ export class BattleView {
     // 火光：最多 4 盞點光源跟著燃燒中的營寨
     for (let k = 0; k < 4; k++) {
       // 永遠開著（只調亮度），避免光源數量變動造成 shader 重編
-      const l = new THREE.PointLight('#ff8a3a', 0, 90, 1.6);
+      const l = new THREE.PointLight('#ff5a12', 0, 110, 1.2);
       this.fireLights.push(l);
       this.stage.scene.add(l);
     }
@@ -197,7 +197,7 @@ export class BattleView {
 
     // 火光
     const burning = this.structs.filter((sv) => sv.st.fire > 0.05).sort((a, b) => b.st.fire - a.st.fire);
-    const night = this.world.sc.time === 'night' ? 2.2 : this.world.sc.time === 'dusk' ? 1.4 : 1;
+    const night = this.world.sc.time === 'night' ? 1.5 : this.world.sc.time === 'dusk' ? 1.2 : 1;
     this.fireLights.forEach((l, k) => {
       const sv = burning[k];
       if (!sv) {
@@ -206,7 +206,8 @@ export class BattleView {
       }
       const f = sv.st.burnt ? 0.35 : sv.st.fire;
       l.position.set(sv.st.x, this.world.hf.height(sv.st.x, sv.st.z) + 8, sv.st.z);
-      l.intensity = (900 + Math.random() * 300) * f * night;
+      l.position.y += 6;
+      l.intensity = (170 + Math.random() * 60) * f * night;
     });
     // 營寨
     for (const sv of this.structs) {

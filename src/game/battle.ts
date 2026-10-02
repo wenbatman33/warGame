@@ -43,11 +43,18 @@ export class Battle {
   /** 慢動作（事件鏡頭） */
   slowmo = 0;
 
+  readonly sc: Scenario;
+
   constructor(
     readonly container: HTMLElement,
-    readonly sc: Scenario,
+    scenario: Scenario,
     readonly opts: BattleOptions,
   ) {
+    // 每場複製一份劇本（觸發器會改 AI 計畫等，不能汙染原始資料）
+    const sc = (this.sc = {
+      ...scenario,
+      teams: scenario.teams.map((t) => ({ ...t, ai: t.ai ? { ...t.ai } : undefined, regiments: t.regiments.map((r) => ({ ...r })), depots: t.depots.map((d) => ({ ...d })) })) as Scenario['teams'],
+    });
     const hf = generateHeightfield(sc.map);
     this.world = new World(sc, hf);
     this.view = new BattleView(container, this.world, opts.quality);
@@ -109,6 +116,7 @@ export class Battle {
     this.phase = 'battle';
     this.world.started = true;
     this.world.flags.startT = this.world.t;
+    this.sc.onStart?.(this.world);
     // 部署時拉的戰線：已經在位置上，直接當作待命
     audio.play('drum_start');
     audio.voice('battle_start');

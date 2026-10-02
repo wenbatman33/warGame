@@ -86,6 +86,10 @@ export interface Scenario {
   triggers?: TriggerSpec[];
   /** 軍師提示 */
   hints?: HintSpec[];
+  /** 開戰瞬間執行（例：赤壁開場前營已起火） */
+  onStart?: (w: World) => void;
+  /** 風向（單位向量）：營寨火勢順風蔓延較快 */
+  wind?: { x: number; z: number };
   /** 軍師（提示頭像） */
   advisor?: { name: string; portrait: string };
   /** 堅守到時間（秒）即勝利 */

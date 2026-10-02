@@ -121,3 +121,30 @@ describe('糧草', () => {
     expect(w.teams[1].supply).toBe('starving');
   });
 });
+
+import { AiCommander } from '../src/ai/commander';
+import { CAMPAIGN } from '../src/data/scenarios/index';
+
+describe('劇本', () => {
+  for (const e of CAMPAIGN) {
+    it(`${e.name}：可以生成並模擬 40 秒`, () => {
+      const sc = e.scenario!;
+      const w = new World(sc, generateHeightfield(sc.map));
+      const ai = sc.teams[1].ai ? new AiCommander(w, 1, { ...sc.teams[1].ai }, 'normal') : null;
+      w.started = true;
+      w.flags.startT = 0;
+      sc.onStart?.(w);
+      for (let k = 0; k < 30 * 40; k++) {
+        w.step();
+        ai?.update();
+        w.events = [];
+      }
+      // 所有軍團都站在可走的地方
+      for (const r of w.regs) {
+        if (r.gone) continue;
+        expect(w.nav.passable(r.mx, r.mz) || w.isWet(r.mx, r.mz)).toBe(true);
+      }
+      expect(w.regs.filter((r) => r.team === 0).length).toBeGreaterThan(4);
+    });
+  }
+});

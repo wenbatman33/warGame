@@ -23,7 +23,16 @@ export type GeneralId =
   | 'lingtong'
   | 'luxun'
   | 'zhouyu'
-  | 'huanggai';
+  | 'huanggai'
+  | 'lidian'
+  | 'yuejin'
+  | 'lumeng'
+  | 'zhuran'
+  | 'xusheng'
+  | 'fengxi'
+  | 'shamoke'
+  | 'guohuai'
+  | 'xunyou';
 
 export type AbilityId =
   | 'rally' // 號令：範圍士氣＋、潰兵重整
@@ -98,4 +107,13 @@ export const GENERALS: Record<GeneralId, GeneralDef> = {
   luxun: { id: 'luxun', name: '陸遜', faction: 'wu', war: 69, lead: 96, int: 95, model: 'gen_fan', ability: 'firestorm', title: '大都督' },
   zhouyu: { id: 'zhouyu', name: '周瑜', faction: 'wu', war: 71, lead: 96, int: 96, model: 'gen_sword', ability: 'firestorm', title: '美周郎' },
   huanggai: { id: 'huanggai', name: '黃蓋', faction: 'wu', war: 83, lead: 75, int: 60, model: 'gen_glaive', ability: 'steady', title: '苦肉計' },
+  lidian: { id: 'lidian', name: '李典', faction: 'wei', war: 78, lead: 82, int: 72, model: 'gen_spear', ability: 'fortify', title: '破虜將軍' },
+  yuejin: { id: 'yuejin', name: '樂進', faction: 'wei', war: 88, lead: 75, int: 50, model: 'gen_sword', ability: 'fury', title: '先登' },
+  lumeng: { id: 'lumeng', name: '呂蒙', faction: 'wu', war: 82, lead: 88, int: 85, model: 'gen_sword', ability: 'swift', title: '吳下阿蒙' },
+  zhuran: { id: 'zhuran', name: '朱然', faction: 'wu', war: 80, lead: 85, int: 70, model: 'gen_spear', ability: 'fortify', title: '江陵守將' },
+  xusheng: { id: 'xusheng', name: '徐盛', faction: 'wu', war: 85, lead: 80, int: 65, model: 'gen_ji', ability: 'fury', title: '疑城之計' },
+  fengxi: { id: 'fengxi', name: '馮習', faction: 'shu', war: 75, lead: 70, int: 55, model: 'gen_sword', ability: null, title: '前部督' },
+  shamoke: { id: 'shamoke', name: '沙摩柯', faction: 'shu', war: 90, lead: 55, int: 25, model: 'gen_glaive', ability: 'berserk', title: '五溪蠻王' },
+  guohuai: { id: 'guohuai', name: '郭淮', faction: 'wei', war: 78, lead: 85, int: 75, model: 'gen_spear', ability: 'steady', title: '雍州刺史' },
+  xunyou: { id: 'xunyou', name: '荀攸', faction: 'wei', war: 30, lead: 70, int: 95, model: 'gen_fan', ability: null, title: '謀主' },
 };

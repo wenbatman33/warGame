@@ -478,7 +478,14 @@ export class World {
         return;
       }
       const d = Math.hypot(st.x - r.cx, st.z - r.cz);
-      if (d > st.radius * 0.6) moving = this.followPath(r, dt, true);
+      if (r.ranged) {
+        // 弓弩：進入射程後原地射火矢
+        if (d > r.unit.ranged!.range * 0.85) moving = this.moveAnchorToward(r, st.x, st.z, dt, wantRun, 2);
+        else {
+          r.path = [];
+          this.turnToward(r, Math.atan2(st.x - r.cx, st.z - r.cz), dt);
+        }
+      } else if (d > st.radius * 0.6) moving = this.followPath(r, dt, true);
       else r.path = [];
     } else if (o.type === 'move' || o.type === 'retreat') {
       moving = this.followPath(r, dt, wantRun);
@@ -966,6 +973,27 @@ export class World {
     const rd = r.unit.ranged!;
     s.reload[i] -= dt * (r.stamina < 30 ? 0.8 : 1);
     if (s.reload[i] > 0 || s.ammo[i] <= 0) return;
+    // 射建築（火矢）
+    if (r.order.type === 'attack' && r.order.struct >= 0) {
+      const st = this.structs[r.order.struct];
+      const dist0 = Math.hypot(st.x - s.x[i], st.z - s.z[i]);
+      if (!st.burnt && dist0 < rd.range * 1.05 && Math.hypot(s.vx[i], s.vz[i]) < 0.6) {
+        const a = this.rng() * Math.PI * 2;
+        const rr = Math.sqrt(this.rng()) * st.radius * 0.7;
+        const ax = st.x + Math.cos(a) * rr;
+        const az = st.z + Math.sin(a) * rr;
+        const dur = rd.arc === 'flat' ? 0.12 + dist0 / 85 : 0.9 + dist0 / 48;
+        const p = this.proj.spawn(s.x[i], this.groundY(s.x[i], s.z[i]) + 1.5, s.z[i], ax, this.groundY(ax, az) + 2, az, this.t, dur, rd.arc === 'flat' ? 2 : 8 + dist0 * 0.22, s.team[i], rd.dmg, rd.ap, true, r.id);
+        if (p >= 0) this.events.push({ k: 'arrow', p });
+        s.ammo[i]--;
+        s.reload[i] = rd.reload * (0.85 + this.rng() * 0.3);
+        s.yaw[i] = Math.atan2(st.x - s.x[i], st.z - s.z[i]);
+        const animDur = Math.min(s.reload[i], ANIMS.shoot.dur * 1.2);
+        s.setAnim(i, 'shoot', this.t, ANIMS.shoot.dur / animDur, true, this.t - 0.63 * animDur);
+        r.lastFireT = this.t;
+      }
+      return;
+    }
     if (r.fireTarget < 0) return;
     const moving = Math.hypot(s.vx[i], s.vz[i]) > 0.6;
     if (moving && !r.unit.mounted) return;
@@ -1379,6 +1407,10 @@ export class World {
             st.team = 1 - st.team;
             st.capture = 0;
             this.events.push({ k: 'msg', text: `${this.teams[st.team].name}控制了${st.name}！${this.teams[old].name}斷水`, tone: st.team === this.player ? 'good' : 'bad' });
+            const ohq = this.teams[old].hq;
+            if (ohq) ohq.stock = Math.min(ohq.stock, ohq.maxStock * 0.22);
+            for (const r of this.regs) if (r.team === old && !r.gone) r.morale -= 12;
+            this.flags.waterT = this.t - ((this.flags.startT as number) ?? 0);
           }
         } else st.capture = Math.max(0, st.capture - dt / 30);
         continue;
@@ -1393,7 +1425,23 @@ export class World {
         }
       } else if (friends > 0 && enemies === 0) {
         st.ignite = Math.max(0, st.ignite - dt / 8);
-        st.fire = Math.max(0, st.fire - dt * 0.04 * Math.min(3, friends / 10));
+        st.fire = Math.max(0, st.fire - dt * 0.02 * Math.min(2, friends / 15)); // 守軍救火只能減緩，燒起來就很難撲滅
+      }
+      // 營寨火勢延燒：燃燒中的營寨點燃附近營寨（順風更快）
+      if (st.kind === 'camp' && st.fire === 0) {
+        for (const o of this.structs) {
+          if (o === st || o.kind !== 'camp' || (o.fire < 0.3 && !o.burnt) || o.team !== st.team) continue;
+          const dx = st.x - o.x;
+          const dz = st.z - o.z;
+          const d = Math.hypot(dx, dz);
+          if (d > 95) continue;
+          const wind = this.sc.wind ? 1 + 1.5 * Math.max(0, (dx * this.sc.wind.x + dz * this.sc.wind.z) / d) : 1;
+          st.ignite = Math.min(1, st.ignite + dt * 0.022 * (o.burnt ? 0.5 : o.fire) * wind * (1 - d / 120));
+        }
+        if (st.ignite >= 1) {
+          st.fire = 0.2;
+          this.events.push({ k: 'ignite', s: st.id });
+        }
       }
       if (st.fire > 0) {
         st.fire = Math.min(1, st.fire + dt * 0.05);
@@ -1449,7 +1497,7 @@ export class World {
     for (const st of this.structs) {
       if (st.burnt || st.team === team || st.kind === 'water') continue;
       if (Math.hypot(st.x - x, st.z - z) < st.radius) {
-        st.ignite = Math.min(1, st.ignite + 0.03);
+        st.ignite = Math.min(1, st.ignite + 0.012);
         if (st.ignite >= 1 && st.fire === 0) {
           st.fire = 0.15;
           this.events.push({ k: 'ignite', s: st.id });

@@ -66,7 +66,7 @@ function makePool(cap: number, additive: boolean, scale: { value: number }): Poo
 }
 
 const COLORS: Record<ParticleKind, [number, number, number, number]> = {
-  fire: [1.0, 0.55, 0.15, 0.9],
+  fire: [0.95, 0.4, 0.08, 0.75],
   smoke: [0.22, 0.2, 0.19, 0.55],
   dust: [0.78, 0.68, 0.5, 0.35],
   spark: [1.0, 0.85, 0.5, 1.0],
