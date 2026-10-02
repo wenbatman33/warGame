@@ -45,6 +45,7 @@ export type AbilityId =
   | 'rally' // 號令：範圍士氣＋、潰兵重整
   | 'berserk' // 親衛攻擊大增、防禦下降
   | 'terror' // 範圍敵軍士氣重挫＋自身加速
+  | 'peerless' // 天下無雙：範圍士氣重挫＋攻擊大增
   | 'swift' // 移動加速、不受側擊
   | 'steady' // 範圍內士氣不降
   | 'cleave' // 前方扇形重擊
@@ -68,6 +69,7 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   rally: { id: 'rally', name: '號令全軍', cd: 90, desc: '120 m 內友軍士氣 +30，潰逃中的軍團立刻重整' },
   berserk: { id: 'berserk', name: '虎痴裸衣', cd: 60, desc: '20 秒內親衛攻擊 ×1.6、防禦 ×0.7' },
   terror: { id: 'terror', name: '威震逍遙', cd: 75, desc: '35 m 內敵軍士氣 −35；親衛速度 +30%，15 秒' },
+  peerless: { id: 'peerless', name: '天下無雙', cd: 70, desc: '30 m 內敵軍士氣 −25；親衛攻擊 ×1.5、速度 +15%，15 秒' },
   swift: { id: 'swift', name: '巧變', cd: 60, desc: '20 秒內移動 +40%、不受側擊懲罰' },
   steady: { id: 'steady', name: '剛烈', cd: 70, desc: '25 秒內親衛與 40 m 內友軍士氣不下降' },
   cleave: { id: 'cleave', name: '青龍偃月', cd: 60, desc: '前方 20 m 扇形重擊，擊倒並士氣 −25' },
@@ -125,7 +127,7 @@ export const GENERALS: Record<GeneralId, GeneralDef> = {
   huangzhong: { id: 'huangzhong', name: '黃忠', faction: 'shu', war: 95, lead: 80, int: 60, model: 'gen_glaive', ability: 'fury', title: '老當益壯' },
   xiahouyuan: { id: 'xiahouyuan', name: '夏侯淵', faction: 'wei', war: 90, lead: 85, int: 60, model: 'gen_sword', ability: 'swift', title: '虎步關右' },
   fazheng: { id: 'fazheng', name: '法正', faction: 'shu', war: 30, lead: 75, int: 94, model: 'gen_fan', ability: 'rally', title: '翼侯' },
-  lvbu: { id: 'lvbu', name: '呂布', faction: 'dong', war: 100, lead: 70, int: 30, model: 'gen_ji', ability: 'terror', title: '人中呂布' },
+  lvbu: { id: 'lvbu', name: '呂布', faction: 'dong', war: 100, lead: 70, int: 30, model: 'gen_ji', ability: 'peerless', title: '人中呂布' },
   dongzhuo: { id: 'dongzhuo', name: '董卓', faction: 'dong', war: 70, lead: 75, int: 60, model: 'gen_sword', ability: 'rally', title: '相國' },
   huaxiong: { id: 'huaxiong', name: '華雄', faction: 'dong', war: 88, lead: 60, int: 30, model: 'gen_glaive', ability: 'fury', title: '西涼猛將' },
   yanliang: { id: 'yanliang', name: '顏良', faction: 'yuan', war: 92, lead: 70, int: 40, model: 'gen_glaive', ability: 'fury', title: '河北名將' },

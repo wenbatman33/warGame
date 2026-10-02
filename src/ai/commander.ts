@@ -248,6 +248,7 @@ export class AiCommander {
         use = w.regs.some((o) => o.team === this.team && !o.gone && (o.state === 'routing' || o.morale < 30) && this.dist(r, o) < 120);
         break;
       case 'terror':
+      case 'peerless':
       case 'roar':
       case 'cleave':
         use = near(35) > 0;
@@ -303,14 +304,16 @@ export class AiCommander {
       return;
     }
     // 火矢：敵方營寨（有糧的）或正在跟我軍肉搏以外的密集敵陣
-    if (cmd >= 4) {
+    if (cmd >= 4 && w.sc.weather !== 'rain') {
       const since = w.t - ((w.flags.startT as number) ?? 0);
       const st = since < 90 ? undefined : w.structs.find((s) => s.team !== this.team && !s.burnt && s.kind !== 'water' && s.kind !== 'hq' && s.fire === 0 && mine.some((r) => Math.hypot(r.mx - s.x, r.mz - s.z) < 130));
       if (st) {
         w.useStratagem(this.team, 'firearrows', st.x, st.z);
         return;
       }
-      const tgt = enemies.find((e) => !e.routing && e.engagedWith.size === 0 && e.alive > 60 && mine.some((r) => Math.hypot(r.mx - e.mx, r.mz - e.mz) < 140));
+      // 射敵陣時，火箭雨範圍不能波及敵方建築（開戰前 90 秒不燒營、本陣永遠不直接燒）
+      const nearStruct = (e: Regiment) => w.structs.some((s) => s.team !== this.team && !s.burnt && s.kind !== 'water' && (since < 90 || s.kind === 'hq') && Math.hypot(s.x - e.mx, s.z - e.mz) < 25 + s.radius + 5);
+      const tgt = enemies.find((e) => !e.routing && e.engagedWith.size === 0 && e.alive > 60 && !nearStruct(e) && mine.some((r) => Math.hypot(r.mx - e.mx, r.mz - e.mz) < 140));
       if (tgt && cmd >= 6) w.useStratagem(this.team, 'firearrows', tgt.mx, tgt.mz);
     }
   }

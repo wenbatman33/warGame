@@ -37,7 +37,7 @@ export type GameEvent =
   | { k: 'defect'; reg: number }
   | { k: 'panic'; team: number }
   | { k: 'chargeStart'; reg: number }
-  | { k: 'duel'; a: string; b: string; winner: string; killed: boolean; x: number; z: number }
+  | { k: 'duel'; a: string; b: string; winner: string; loser: string; winTeam: number; killed: boolean; x: number; z: number }
   | { k: 'stratagem'; team: number; id: StratagemId; x: number; z: number }
   | { k: 'end'; winner: number };
 
@@ -511,6 +511,8 @@ export class World {
 
     if (r.routing) {
       r.routT += dt;
+      // 潰逃路線推進
+      if (r.pathI < r.path.length && Math.hypot(r.path[r.pathI][0] - r.mx, r.path[r.pathI][1] - r.mz) < 14) r.pathI++;
       return;
     }
     if (!this.started) return;
@@ -754,10 +756,16 @@ export class World {
       let wantFace = false;
 
       if (r.routing) {
-        // 潰逃：各自往後方逃
-        const [fx, fz] = this.retreatPoint(r);
-        tx = fx + ((s.tint[i] - 0.5) * 120);
-        tz = fz;
+        // 潰逃：沿逃跑路線（各自散開一點），走完就往地圖外跑
+        if (r.pathI < r.path.length) {
+          const [wx, wz] = r.path[r.pathI];
+          tx = wx + (s.tint[i] - 0.5) * 16;
+          tz = wz + (((s.tint[i] * 7.7) % 1) - 0.5) * 16;
+        } else {
+          const [fx, fz] = this.retreatPoint(r);
+          tx = fx + (s.tint[i] - 0.5) * 40;
+          tz = fz + (((s.tint[i] * 7.7) % 1) - 0.5) * 40;
+        }
         maxSp = u.run * 0.95 * (0.85 + s.tint[i] * 0.3);
         if (!this.hf.inPlay(s.x[i], s.z[i], 8)) {
           this.soldierGone(i);
@@ -1048,8 +1056,10 @@ export class World {
       this.damage(j, dmg, i);
       if (s.state[j] === SState.Alive && !s.general[j]) s.stun[j] = 1.0 + this.rng() * 0.6;
       // 推開
-      s.x[j] += fx * 0.8;
-      s.z[j] += fz * 0.8;
+      if (this.nav.passable(s.x[j] + fx * 0.8, s.z[j] + fz * 0.8)) {
+        s.x[j] += fx * 0.8;
+        s.z[j] += fz * 0.8;
+      }
       s.vx[i] *= 0.6;
       s.vz[i] *= 0.6;
       r.engagedWith.add(er.id);
@@ -1074,13 +1084,13 @@ export class World {
     if (r.order.type === 'attack' && r.order.struct >= 0) {
       const st = this.structs[r.order.struct];
       const dist0 = Math.hypot(st.x - s.x[i], st.z - s.z[i]);
-      if (!st.burnt && dist0 < rd.range * 1.05 && Math.hypot(s.vx[i], s.vz[i]) < 0.6) {
+      if (!st.burnt && dist0 < rd.range * 1.05 * this.wx.range && Math.hypot(s.vx[i], s.vz[i]) < 0.6) {
         const a = this.rng() * Math.PI * 2;
         const rr = Math.sqrt(this.rng()) * st.radius * 0.7;
         const ax = st.x + Math.cos(a) * rr;
         const az = st.z + Math.sin(a) * rr;
         const dur = rd.arc === 'flat' ? 0.12 + dist0 / 85 : 0.9 + dist0 / 48;
-        const p = this.proj.spawn(s.x[i], this.groundY(s.x[i], s.z[i]) + 1.5, s.z[i], ax, this.groundY(ax, az) + 2, az, this.t, dur, rd.arc === 'flat' ? 2 : 8 + dist0 * 0.22, s.team[i], rd.dmg, rd.ap, true, r.id);
+        const p = this.proj.spawn(s.x[i], this.groundY(s.x[i], s.z[i]) + 1.5, s.z[i], ax, this.groundY(ax, az) + 2, az, this.t, dur, rd.arc === 'flat' ? 2 : 8 + dist0 * 0.22, s.team[i], rd.dmg, rd.ap, this.sc.weather !== 'rain', r.id);
         if (p >= 0) this.events.push({ k: 'arrow', p });
         s.ammo[i]--;
         s.reload[i] = rd.reload * (0.85 + this.rng() * 0.3);
@@ -1333,6 +1343,7 @@ export class World {
       // 地形：高地回復、涉水交戰恐慌（半渡而擊）、己方營寨安心
       if (r.terrain.high && !r.routing) dm += 0.3 * dt;
       if (r.terrain.wet && r.engagedWith.size > 0) dm -= RULES.fordMorale * dt;
+      if (r.engagedWith.size > 0 && r.terrain.relHeight < -5) dm -= RULES.uphillMorale * dt;
       if (r.terrain.camp && !r.routing) dm += RULES.campMorale * dt;
       if (steady && dm < 0) dm = 0;
       if (r.general?.alive && r.hasBuff('steady', t)) dm = Math.max(0, dm);
@@ -1347,9 +1358,9 @@ export class World {
           const e = this.regs[id];
           return !e.routing && Math.hypot(e.mx - r.mx, e.mz - r.mz) < 45;
         });
-        if (!threatened) {
+        if (!threatened && !panic) {
           r.calmT += dt;
-          r.morale = Math.min(eff.moraleCap, r.morale + 2.2 * dt);
+          r.morale = Math.min(eff.moraleCap, r.morale + 2.2 * dt * (team.supply === 'starving' ? 0.4 : 1));
         } else r.calmT = 0;
         if (r.calmT > RULES.rallyDelay && r.morale >= RULES.rallyMorale) this.rally(r);
       }
@@ -1373,7 +1384,11 @@ export class World {
     r.routs++;
     r.calmT = 0;
     r.routT = 0;
-    r.path = [];
+    // 逃跑路線：尋路到己方後方的地圖邊緣（不會穿越河流、懸崖）
+    const [px, pz] = this.retreatPoint(r);
+    const lim = this.hf.play / 2 - 10;
+    r.path = this.nav.findPath(r.mx, r.mz, Math.max(-lim, Math.min(lim, px)), Math.max(-lim, Math.min(lim, pz)));
+    r.pathI = 0;
     r.fireTarget = -1;
     for (const i of r.members) this.s.target[i] = -1;
     if (r.routs >= RULES.maxRouts) {
@@ -1759,8 +1774,8 @@ export class World {
   private checkEnd(): void {
     if (this.over || !this.started) return;
     for (const team of this.teams) {
-      const standing = this.regs.some((r) => r.team === team.index && !r.gone && !r.routing && r.alive > 0 && r.name !== '逃兵');
-      if (!standing) {
+      const standing = this.regs.filter((r) => r.team === team.index && !r.gone && !r.routing && r.alive > 0 && r.name !== '逃兵').reduce((a, r) => a + r.alive, 0);
+      if (standing === 0 || standing < team.initialStrength * RULES.defeatStanding) {
         this.finish(1 - team.index);
         return;
       }
@@ -1833,10 +1848,15 @@ export class World {
   // ───────────────────────── 武將單挑 ─────────────────────────
 
   private duelT = new Map<string, number>();
+  private genDuelT = new Map<string, number>();
+  /** 劇本禁止的單挑組合（例：虎牢關呂布不和劉關張單挑，要等三英合擊） */
+  duelBan: ((a: string, b: string) => boolean) | null = null;
+  /** 劇本指定的單挑結果（回傳 null 表示照武力擲骰） */
+  duelFate: ((a: string, b: string) => { winner: string; killed: boolean } | null) | null = null;
   /** 兩軍武將在 8 m 內相遇 → 單挑：依武力判勝負 */
   private checkDuels(): void {
     const s = this.s;
-    const gens = this.regs.filter((r) => r.general?.alive && !r.routing && !r.gone);
+    const gens = this.regs.filter((r) => r.general?.alive && !r.routing && !r.gone && r.order.type !== 'retreat' && (this.genDuelT.get(r.general.id) ?? -999) < this.t - 120);
     for (const a of gens) {
       for (const b of gens) {
         if (a.team >= b.team || a.team === b.team) continue;
@@ -1844,18 +1864,24 @@ export class World {
         const ib = b.general!.soldier;
         const d = Math.hypot(s.x[ia] - s.x[ib], s.z[ia] - s.z[ib]);
         if (d > 8) continue;
+        if (this.duelBan?.(a.general!.id, b.general!.id)) continue;
         const key = `${a.general!.id}|${b.general!.id}`;
         if ((this.duelT.get(key) ?? -999) > this.t - 60) continue;
         this.duelT.set(key, this.t);
+        this.genDuelT.set(a.general!.id, this.t);
+        this.genDuelT.set(b.general!.id, this.t);
         const ga = GENERALS[a.general!.id];
         const gb = GENERALS[b.general!.id];
-        const pa = ga.war ** 4 / (ga.war ** 4 + gb.war ** 4);
-        const aWins = this.rng() < pa;
+        // 武力十次方比：差 10 點約八成勝率
+        const pa = ga.war ** 10 / (ga.war ** 10 + gb.war ** 10);
+        // 劇本可指定史實結果（例：白馬關羽斬顏良）
+        const fate = this.duelFate?.(ga.id, gb.id) ?? null;
+        const aWins = fate ? fate.winner === ga.id : this.rng() < pa;
         const [win, lose, gw, gl] = aWins ? [a, b, ga, gb] : [b, a, gb, ga];
         const li = lose.general!.soldier;
         // 武力差距大 → 一合斬於馬下；否則重傷敗走
-        const killed = gw.war - gl.war >= 8 || this.rng() < 0.35;
-        this.events.push({ k: 'duel', a: ga.name, b: gb.name, winner: gw.name, killed, x: s.x[li], z: s.z[li] });
+        const killed = fate ? fate.killed : gw.war - gl.war >= 6 || this.rng() < 0.2;
+        this.events.push({ k: 'duel', a: ga.name, b: gb.name, winner: gw.name, loser: gl.name, winTeam: win.team, killed, x: s.x[li], z: s.z[li] });
         if (killed) this.damage(li, 1e6, win.general!.soldier);
         else {
           s.hp[li] = Math.max(1, s.hp[li] * 0.35);
@@ -1900,6 +1926,10 @@ export class World {
       case 'terror':
         for (const o of within(35, 1 - r.team)) if (!o.hasBuff('steady', t)) o.morale -= 35;
         r.buffs.push({ id: 'terror', until: t + 15, speed: 1.3 });
+        break;
+      case 'peerless':
+        for (const o of within(30, 1 - r.team)) if (!o.hasBuff('steady', t)) o.morale -= 25;
+        r.buffs.push({ id: 'peerless', until: t + 15, atk: 1.5, speed: 1.15 });
         break;
       case 'swift':
         r.buffs.push({ id: 'swift', until: t + 20, speed: 1.4 });
@@ -1966,6 +1996,7 @@ export class World {
     const def = STRATAGEMS[id];
     const ts = this.teams[team];
     if (ts.command < def.cost) return '軍令點不足';
+    if (id === 'firearrows' && this.sc.weather === 'rain') return '雨天點不著火，無法火攻';
     // 地點型計策要在我軍 160 m 內（斥候除外）
     if (def.target === 'area' && id !== 'scout' && !this.regs.some((o) => o.team === team && !o.gone && !o.routing && Math.hypot(o.mx - x, o.mz - z) < 160)) return '距離我軍太遠（需在 160 m 內）';
     const t = this.t;
@@ -1988,11 +2019,12 @@ export class World {
           const sx = x + (this.rng() - 0.5) * 60;
           const sz = z + back * 130;
           const t0 = t + this.rng() * 2.5;
-          const p = this.proj.spawn(sx, this.groundY(sx, sz) + 3, sz, tx, this.groundY(tx, tz) + 0.5, tz, t0, 2.2, 38, team, 22, 0.2, true, -1);
+          const p = this.proj.spawn(sx, this.groundY(sx, sz) + 3, sz, tx, this.groundY(tx, tz) + 0.5, tz, t0, 2.2, 38, team, 22 * this.wx.rangedDmg, 0.2, this.sc.weather !== 'rain', -1);
           void p;
         }
         for (const o of this.regs) if (o.team !== team && !o.gone && Math.hypot(o.mx - x, o.mz - z) < def.radius + o.radius * 0.5) o.morale -= 10;
         for (const st of this.structs) {
+          if (this.sc.weather === 'rain') break;
           if (st.team !== team && !st.burnt && st.kind !== 'water' && Math.hypot(st.x - x, st.z - z) < def.radius + st.radius) {
             st.ignite = 1;
             if (st.fire === 0) {

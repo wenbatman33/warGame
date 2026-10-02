@@ -93,8 +93,8 @@ describe('戰鬥與士氣', () => {
   it('高地有近戰加成', () => {
     const sc = scenario(flat(), [{ type: 'sword', x: 0, z: 0 }], [{ type: 'sword', x: 0, z: -50 }]);
     const w = new World(sc, generateHeightfield(sc.map));
-    expect(w.heightMul(10, 0)).toBeCloseTo(1.3, 3);
-    expect(w.heightMul(0, 10)).toBeCloseTo(0.75, 3);
+    expect(w.heightMul(10, 0)).toBeCloseTo(1.35, 3);
+    expect(w.heightMul(0, 10)).toBeCloseTo(0.65, 3);
     expect(w.heightMul(0, 0)).toBe(1);
   });
 });

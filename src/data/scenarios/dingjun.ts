@@ -96,7 +96,7 @@ export const DINGJUN: Scenario = {
       ai: { plan: 'defend', aggression: 0.6, raid: true, startDelay: 30, attackAfter: 150 },
       regiments: [
         // 夏侯淵帶少數輕兵在山腳修鹿角
-        { type: 'guard', x: 60, z: -10, general: 'xiahouyuan', name: '夏侯淵部', role: 'hold' },
+        { type: 'guard', x: 60, z: -55, general: 'xiahouyuan', name: '夏侯淵部', role: 'hold' },
         { type: 'sword', x: 90, z: -35, count: 90, name: '修補鹿角的輕兵', role: 'hold', morale: 60 },
         { type: 'guard', x: -120, z: -120, general: 'zhanghe', name: '張郃部' },
         { type: 'sword', x: -60, z: -90 },
@@ -112,6 +112,10 @@ export const DINGJUN: Scenario = {
       ],
     },
   ],
+  onStart: (w) => {
+    // 史實：黃忠於定軍山斬夏侯淵
+    w.duelFate = (a, b) => ((a === 'huangzhong' && b === 'xiahouyuan') || (a === 'xiahouyuan' && b === 'huangzhong') ? { winner: 'huangzhong', killed: true } : null);
+  },
   stars: [
     { text: '擊潰魏軍', check: (w) => w.winner === 0 },
     { text: '斬殺夏侯淵', check: (w) => w.regs.some((r) => r.general?.id === 'xiahouyuan' && !r.general.alive && !r.general.fled) },
@@ -121,7 +125,7 @@ export const DINGJUN: Scenario = {
     {
       when: (w) => w.regs.some((r) => r.general?.id === 'xiahouyuan' && !r.general.alive && !r.general.fled),
       run: (w) => {
-        w.events.push({ k: 'msg', text: '黃忠斬夏侯淵！魏軍群龍無首', tone: 'gold' });
+        w.events.push({ k: 'msg', text: '夏侯淵陣亡！魏軍群龍無首', tone: 'gold' });
         w.teams[1].panicUntil = w.t + 60;
         w.events.push({ k: 'panic', team: 1 });
       },

@@ -73,6 +73,10 @@ export const BAIMA: Scenario = {
       ],
     },
   ],
+  onStart: (w) => {
+    // 史實：關羽刺顏良於馬下
+    w.duelFate = (a, b) => ((a === 'guanyu' && b === 'yanliang') || (a === 'yanliang' && b === 'guanyu') ? { winner: 'guanyu', killed: true } : null);
+  },
   stars: [
     { text: '擊潰袁軍', check: (w) => w.winner === 0 },
     { text: '關羽斬顏良', check: (w) => w.regs.some((r) => r.general?.id === 'yanliang' && !r.general.alive && !r.general.fled) },

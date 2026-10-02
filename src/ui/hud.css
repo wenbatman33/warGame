@@ -32,7 +32,7 @@
 .top-c .ttl { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 20px; color: var(--gold); letter-spacing: 2px; }
 .top-c .clock { font-weight: 900; font-size: 14px; color: #fff; }
 .tug { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.tug .side { font-size: 12px; font-weight: 900; color: #fff; width: 52px; }
+.tug .side { font-size: 12px; font-weight: 900; color: #fff; width: 52px; white-space: nowrap; }
 .tug .tb { width: min(34vw, 340px); height: 14px; border: 2px solid #000; border-radius: 8px; overflow: hidden; display: flex; background: #222; box-shadow: 0 2px 0 #000; }
 .tug .tb i { display: block; height: 100%; transition: width 0.4s; }
 .pausebar { margin-top: 6px; display: none; background: rgba(0, 0, 0, 0.65); border: 2px solid var(--gold); color: var(--gold); font-weight: 900; padding: 3px 12px; border-radius: 12px; font-size: 13px; }
@@ -82,6 +82,7 @@
 .bottom { position: absolute; left: 0; right: 0; bottom: 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 0 8px; transform-origin: bottom center; }
 .cards { display: flex; gap: 5px; overflow-x: auto; pointer-events: auto; padding: 4px 2px 2px; max-width: 70vw; scrollbar-width: none; }
 .cards::-webkit-scrollbar { display: none; }
+.cards.more { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
 .card { flex: 0 0 auto; width: 66px; height: 86px; border-radius: 10px; border: 2px solid #000; position: relative; cursor: pointer; overflow: hidden; background: linear-gradient(#5b8fd6, #2c4f86); box-shadow: 0 3px 0 #000, inset 0 2px 0 rgba(255, 255, 255, 0.35); user-select: none; }
 .card .ico { position: absolute; left: 0; right: 0; top: 4px; height: 46px; display: grid; place-items: center; font-size: 30px; }
 .card .ico img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; }
@@ -135,7 +136,7 @@
 /* 結算 */
 .result { position: absolute; inset: 0; background: radial-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.85)); display: grid; place-items: center; pointer-events: auto; animation: fadeIn 0.6s; }
 @keyframes fadeIn { from { opacity: 0; } }
-.result .box { text-align: center; }
+.result .box { text-align: center; background: rgba(24, 18, 10, 0.94); border: 3px solid #000; border-radius: 18px; padding: 14px 24px 18px; box-shadow: 0 6px 0 rgba(0, 0, 0, 0.6), inset 0 0 0 2px #b8862b; max-width: min(92vw, 720px); }
 .result .big { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 64px; color: var(--gold); animation: toastIn 0.5s; }
 .result .big.lose { color: #c9c9c9; }
 .result .stars { display: flex; justify-content: center; gap: 10px; margin: 6px 0 10px; }

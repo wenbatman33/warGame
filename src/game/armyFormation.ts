@@ -30,20 +30,32 @@ function kind(r: Regiment): 'inf' | 'ranged' | 'cav' | 'gen' {
 export function planArmyFormation(w: World, ids: number[], f: ArmyFormation, facing?: number): Placement[] {
   const regs = ids.map((id) => w.regs[id]).filter((r) => r && !r.gone && !r.routing);
   if (regs.length === 0) return [];
-  const cx = regs.reduce((a, r) => a + r.mx, 0) / regs.length;
-  const cz = regs.reduce((a, r) => a + r.mz, 0) / regs.length;
+  let cx = regs.reduce((a, r) => a + r.mx, 0) / regs.length;
+  let cz = regs.reduce((a, r) => a + r.mz, 0) / regs.length;
   // 預設面向最近的敵軍重心
   if (facing === undefined) {
-    // 只看最近的 5 團敵軍（遠方的守倉部隊不算）
+    // 只看 200 m 內最近的 5 團敵軍（遠方的守倉部隊不算）
     const en = w.regs
-      .filter((r) => r.team !== regs[0].team && !r.gone && !r.routing && w.isVisibleTo(r, regs[0].team))
+      .filter((r) => r.team !== regs[0].team && !r.gone && !r.routing && w.isVisibleTo(r, regs[0].team) && Math.hypot(r.mx - cx, r.mz - cz) < 200)
       .sort((a, b) => Math.hypot(a.mx - cx, a.mz - cz) - Math.hypot(b.mx - cx, b.mz - cz))
       .slice(0, 5);
     if (en.length) {
       const ex = en.reduce((a, r) => a + r.mx, 0) / en.length;
       const ez = en.reduce((a, r) => a + r.mz, 0) / en.length;
       facing = Math.atan2(ex - cx, ez - cz);
-    } else facing = regs.reduce((a, r) => a + r.facing, 0) / regs.length;
+    } else {
+      // 附近沒有敵軍：維持目前的平均朝向（角度用向量平均）
+      facing = Math.atan2(
+        regs.reduce((a, r) => a + Math.sin(r.facing), 0),
+        regs.reduce((a, r) => a + Math.cos(r.facing), 0),
+      );
+    }
+  }
+  // 以步兵目前位置當陣線基準（避免弓弩在後時整個陣往後退）
+  const inf = regs.filter((r) => kind(r) === 'inf');
+  if (inf.length) {
+    cx = inf.reduce((a, r) => a + r.mx, 0) / inf.length;
+    cz = inf.reduce((a, r) => a + r.mz, 0) / inf.length;
   }
   const c = Math.cos(facing);
   const s = Math.sin(facing);

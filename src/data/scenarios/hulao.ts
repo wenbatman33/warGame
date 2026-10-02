@@ -14,7 +14,7 @@ export const HULAO: Scenario = {
     '關上呂布騎赤兔、持方天畫戟，連斬聯軍數將，「人中呂布，馬中赤兔」，無人能敵。',
     '玄德公，與雲長、翼德三人合擊呂布，再一舉攻破虎牢關！',
   ],
-  goals: ['擊潰董卓軍，或攻破虎牢關（我軍在關前停留且無守軍）', '三英戰呂布：讓劉備、關羽、張飛中的兩人同時靠近呂布', '小心呂布：武力 100，單挑幾乎無敵'],
+  goals: ['擊潰董卓軍，或攻破虎牢關（我軍在關前停留且無守軍）', '三英戰呂布：讓劉備、關羽、張飛中的兩人同時靠近呂布', '小心呂布：武力 100，其他武將單挑幾乎必敗；「天下無雙」會重挫周圍士氣'],
   tip: '谷地狹長、兩側是山：別把軍團塞在谷底被西涼騎兵衝散。讓劉關張一起行動，合圍呂布。',
   time: 'dusk',
   camera: { x: 0, z: 150, dist: 230 },
@@ -107,6 +107,10 @@ export const HULAO: Scenario = {
       ],
     },
   ],
+  onStart: (w) => {
+    // 呂布不和劉關張單打獨鬥：要兩人合擊才觸發三英戰呂布
+    w.duelBan = (a, b) => (a === 'lvbu' && SANYING.includes(b)) || (b === 'lvbu' && SANYING.includes(a));
+  },
   stars: [
     { text: '擊潰董卓軍或攻破虎牢關', check: (w) => w.winner === 0 },
     { text: '三英戰呂布', check: (w) => !!w.flags.sanying },
@@ -128,7 +132,9 @@ export const HULAO: Scenario = {
         w.flags.sanying = true;
         w.s.hp[lv.general!.soldier] *= 0.4;
         lv.morale -= 35;
-        w.commandRetreat([lv.id]);
+        // 呂布撥馬回關：直接潰走離場，不再參戰
+        lv.routs = 99;
+        w.rout(lv);
         for (const r of w.regs) if (!r.gone) r.morale = r.team === 0 ? Math.min(100, r.morale + 15) : r.morale - 10;
         w.events.push({ k: 'msg', text: '三英戰呂布！呂布力戰不支，撥馬回關', tone: 'gold' });
       },

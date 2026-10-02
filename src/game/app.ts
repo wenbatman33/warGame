@@ -163,6 +163,9 @@ export class App {
     // 讓讀取畫面先畫出來再做重活
     setTimeout(() => {
       const params = new URLSearchParams(location.search);
+      // 網址 ?diff=easy|normal|hard 可覆蓋難度（測試用）
+      const qd = params.get('diff');
+      if (qd === 'easy' || qd === 'normal' || qd === 'hard') difficulty = qd;
       this.battle = new Battle(this.root, sc, {
         quality: SETTINGS.quality,
         difficulty,

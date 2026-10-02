@@ -39,6 +39,8 @@ export const RULES = {
   rallyMorale: 30,
   rallyDelay: 15,
   maxRouts: 3,
+  /** 站著的兵力低於開戰時的此比例 → 全軍潰敗 */
+  defeatStanding: 0.15,
   fireDrain: 2,
   // 體力
   staminaRun: 1.2,
@@ -70,9 +72,11 @@ export const RULES = {
   commandStart: 4,
   // 地形優勢（docs/02 §6）
   /** 每公尺高低差的近戰加成，上下限 */
-  heightPerMeter: 0.03,
-  heightMax: 0.3,
-  heightMin: -0.25,
+  heightPerMeter: 0.035,
+  heightMax: 0.45,
+  heightMin: -0.35,
+  /** 仰攻（交戰中比敵人低 5 m 以上）每秒士氣流失 */
+  uphillMorale: 0.6,
   /** 每公尺高低差的射程加成，上限 */
   rangePerMeter: 0.012,
   rangeMax: 0.25,

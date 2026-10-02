@@ -62,6 +62,8 @@ export class Hud {
   private resultShown = false;
   /** 結算結果（觀戰後用 🚪 離開也會記錄） */
   private result: { scenario: string; win: boolean; stars: boolean[]; time: number } | null = null;
+  private resultHtml = '';
+  private cardFade: () => void = () => {};
 
   constructor(
     container: HTMLElement,
@@ -131,8 +133,9 @@ export class Hud {
     exit.title = '撤離戰場';
     exit.onclick = () => {
       // 戰鬥已結束：直接帶著結果離開（星數照記）
-      if (b.world.over && this.result) {
-        b.exit(this.result);
+      if (b.world.over) {
+        this.freezeResult();
+        b.exit(this.result!);
         return;
       }
       if (confirm('放棄這場戰役，返回選單？')) b.exit(null);
@@ -203,6 +206,10 @@ export class Hud {
     const bottom = el('div', 'bottom');
     bottom.dataset.layout = 'bottom';
     this.cardsEl = el('div', 'cards');
+    // 卡片超出可視範圍時，右側淡出提示還能捲動
+    const fade = () => this.cardsEl.classList.toggle('more', this.cardsEl.scrollLeft + this.cardsEl.clientWidth < this.cardsEl.scrollWidth - 4);
+    this.cardsEl.addEventListener('scroll', fade, { passive: true });
+    this.cardFade = fade;
     this.cardsEl.addEventListener(
       'wheel',
       (e) => {
@@ -253,7 +260,10 @@ export class Hud {
     this.refreshTime();
   }
 
-  private onResize = (): void => applyLayout(this.root);
+  private onResize = (): void => {
+    applyLayout(this.root);
+    this.cardFade();
+  };
 
   dispose(): void {
     removeEventListener('resize', this.onResize);
@@ -297,6 +307,7 @@ export class Hud {
     if (!r.general) c.style.background = `linear-gradient(${FACTIONS[r.faction].color}, ${FACTIONS[r.faction].dark})`;
     this.cardsEl.appendChild(c);
     this.cards.set(r.id, c);
+    requestAnimationFrame(() => this.cardFade());
   }
 
   private focus(r: Regiment): void {
@@ -508,7 +519,7 @@ export class Hud {
     if (r.inSupply) terr.push('📦 本陣補給（補箭、體力回復 ×1.5）');
     const ammo = r.ranged ? r.members.reduce((a, i) => a + w.s.ammo[i], 0) / Math.max(1, r.members.length) : -1;
     const forms: Record<string, string> = { line: '橫陣', square: '方陣', wedge: '鋒矢', loose: '散陣' };
-    const BUFF: Record<string, string> = { drums: '擂鼓', march: '急行軍', gong: '鳴金', berserk: '裸衣', terror: '威震', swift: '巧變', steady: '剛烈', unstoppable: '七進七出', fortify: '堅守', raid: '劫營', fury: '奮戰' };
+    const BUFF: Record<string, string> = { drums: '擂鼓', march: '急行軍', gong: '鳴金', berserk: '裸衣', terror: '威震', swift: '巧變', steady: '剛烈', unstoppable: '七進七出', fortify: '堅守', raid: '劫營', fury: '奮戰', peerless: '無雙' };
     const buffs = [...new Set(r.buffs.filter((b) => b.until > w.t).map((b) => BUFF[b.id] ?? b.id))];
     const gen = r.general ? GENERALS[r.general.id] : null;
     this.infoEl.style.display = 'block';
@@ -868,7 +879,8 @@ export class Hud {
       }
       case 'duel': {
         this.toast(`⚔ 單挑！${ev.a} 對 ${ev.b}`, 'gold');
-        setTimeout(() => this.toast(ev.killed ? `${ev.winner}斬敵將於馬下！` : `${ev.winner}勝！敵將負傷敗走`, 'gold'), 900);
+        const won = mine(ev.winTeam);
+        setTimeout(() => this.toast(ev.killed ? `${ev.winner}斬${ev.loser}於馬下！` : `${ev.winner}勝！${ev.loser}負傷敗走`, won ? 'gold' : 'bad'), 900);
         audio.play('clash', { ...this.b.sndPos(ev.x, ev.z), volume: 1 });
         audio.play('war_cry', this.b.sndPos(ev.x, ev.z));
         this.b.slowmo = 2;
@@ -921,6 +933,8 @@ export class Hud {
         audio.music(ev.winner === w.player ? 'victory' : 'defeat');
         audio.play(ev.winner === w.player ? 'victory_sting' : 'defeat_sting');
         this.say(ev.winner === w.player ? 'victory' : 'defeat');
+        // 結束當下就凍結結算數據（之後觀戰時的傷亡、星數不再變動）
+        this.freezeResult();
         setTimeout(() => this.showResult(), 3500);
         break;
     }
@@ -928,19 +942,18 @@ export class Hud {
 
   // ───────────── 結算 ─────────────
 
-  private showResult(): void {
-    if (this.resultShown) return;
-    this.resultShown = true;
+  /** 戰鬥結束當下的結算快照 */
+  private freezeResult(): void {
+    if (this.resultHtml) return;
     const b = this.b;
     const w = b.world;
     const win = w.winner === w.player;
     const stars = b.sc.stars.map((s) => win && s.check(w));
-    const box = el('div', 'result');
     const me = w.teams[w.player];
     const en = w.teams[1 - w.player];
-    const dur = w.t - ((w.flags.startT as number) ?? 0);
+    const dur = ((w.flags.endT as number) ?? w.t) - ((w.flags.startT as number) ?? 0);
     this.result = { scenario: b.sc.id, win, stars, time: dur };
-    box.innerHTML = `<div class="box">
+    this.resultHtml = `<div class="box">
       <div class="big stroke ${win ? '' : 'lose'}">${win ? '大獲全勝' : '兵敗'}</div>
       <div class="stars">${stars.map(() => '<span class="star">⭐</span>').join('')}</div>
       <div class="goals">${b.sc.stars.map((s, i) => `<div>${stars[i] ? '✅' : '⬜'} ${s.text}</div>`).join('')}</div>
@@ -954,6 +967,16 @@ export class Hud {
       </div>
       ${this.honorRoll()}
       <div class="btns"></div></div>`;
+  }
+
+  private showResult(): void {
+    if (this.resultShown) return;
+    this.resultShown = true;
+    const b = this.b;
+    this.freezeResult();
+    const { win, stars, time: dur } = this.result!;
+    const box = el('div', 'result');
+    box.innerHTML = this.resultHtml;
     const btns = box.querySelector('.btns')!;
     const again = el('div', 'btn green stroke', '⚔ 再戰一次');
     again.onclick = () => b.exit({ scenario: b.sc.id, win, stars, time: dur, retry: true } as never);
@@ -1019,7 +1042,8 @@ export class Hud {
     this.deployEl.style.display = b.phase === 'deploy' ? '' : 'none';
     // 指令列出現時，部署面板往上讓位
     if (b.phase === 'deploy') this.deployEl.style.bottom = this.cmdbar.style.display === 'none' ? '' : `${110 + this.cmdbar.offsetHeight + 6}px`;
-    const el2 = w.t - ((w.flags.startT as number) ?? w.t);
+    // 戰鬥結束後時鐘停住
+    const el2 = (w.over ? (w.flags.endT as number) : w.t) - ((w.flags.startT as number) ?? w.t);
     const wxIcon = b.sc.weather === 'rain' ? '🌧 雨天・' : b.sc.weather === 'fog' ? '🌫 濃霧・' : '';
     this.clockEl.textContent = wxIcon + (b.phase === 'deploy' ? '部署中' : `${Math.floor(el2 / 60)}:${String(Math.floor(el2 % 60)).padStart(2, '0')}${b.sc.holdTime ? ` / ${Math.floor(b.sc.holdTime / 60)}:00` : ''}`);
     const m0 = w.armyMorale(0);

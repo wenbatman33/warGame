@@ -108,7 +108,7 @@ export const CHANGBAN: Scenario = {
   ],
   stars: [
     { text: '堅守 5 分鐘', check: (w) => w.winner === 0 },
-    { text: '接應趙雲回到南岸', check: (w) => w.regs.some((r) => r.general?.id === 'zhaoyun' && r.general.alive && r.mz > 25) },
+    { text: '接應趙雲回到南岸', check: (w) => w.regs.some((r) => r.general?.id === 'zhaoyun' && r.general.alive && !r.routing && !r.gone && r.mz > 25) },
     { text: '張飛部隊從未潰逃', check: (w) => w.winner === 0 && w.regs.some((r) => r.general?.id === 'zhangfei' && r.routs === 0 && !r.gone) },
   ],
   triggers: [
