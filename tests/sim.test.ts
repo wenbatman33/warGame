@@ -99,6 +99,28 @@ describe('戰鬥與士氣', () => {
   });
 });
 
+describe('武將單挑', () => {
+  it('兩軍武將相遇會單挑，武力高者勝', () => {
+    const sc = scenario(flat(), [{ type: 'guard', x: 0, z: 4, general: 'guanyu', facing: 180 }], [{ type: 'guard', x: 0, z: -4, general: 'yanliang', facing: 0 }]);
+    const w = new World(sc, generateHeightfield(sc.map));
+    w.started = true;
+    // 兩位武將直接放到 3 m 內
+    const ga = w.regs[0].general!.soldier;
+    const gb = w.regs[1].general!.soldier;
+    w.s.x[ga] = 0;
+    w.s.z[ga] = 1.5;
+    w.s.x[gb] = 0;
+    w.s.z[gb] = -1.5;
+    let duel: { winner: string } | null = null;
+    for (let k = 0; k < 31 && !duel; k++) {
+      w.step();
+      for (const e of w.events) if (e.k === 'duel') duel = e;
+      w.events = [];
+    }
+    expect(duel).not.toBeNull();
+  });
+});
+
 describe('糧草', () => {
   it('糧倉焚毀 → 全軍士氣重挫、糧況吃緊', () => {
     const sc = scenario(flat(), [{ type: 'sword', x: -100, z: 100 }], [{ type: 'sword', x: 100, z: -100 }], true);

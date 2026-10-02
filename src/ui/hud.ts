@@ -743,6 +743,15 @@ export class Hud {
         this.toast(`${e.icon} ${t.name}${e.name}！${desc}`, mine(ev.team) ? 'bad' : 'good', true);
         break;
       }
+      case 'duel': {
+        this.toast(`⚔ 單挑！${ev.a} 對 ${ev.b}`, 'gold');
+        setTimeout(() => this.toast(ev.killed ? `${ev.winner}斬敵將於馬下！` : `${ev.winner}勝！敵將負傷敗走`, 'gold'), 900);
+        audio.play('clash', { ...this.b.sndPos(ev.x, ev.z), volume: 1 });
+        audio.play('war_cry', this.b.sndPos(ev.x, ev.z));
+        this.b.slowmo = 2;
+        this.b.cam.shake = 0.6;
+        break;
+      }
       case 'chargeStart': {
         const r = w.regs[ev.reg];
         if (!mine(r.team) && !w.isVisibleTo(r, w.player)) break;

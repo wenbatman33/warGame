@@ -37,6 +37,7 @@ export type GameEvent =
   | { k: 'defect'; reg: number }
   | { k: 'panic'; team: number }
   | { k: 'chargeStart'; reg: number }
+  | { k: 'duel'; a: string; b: string; winner: string; killed: boolean; x: number; z: number }
   | { k: 'stratagem'; team: number; id: StratagemId; x: number; z: number }
   | { k: 'end'; winner: number };
 
@@ -400,6 +401,7 @@ export class World {
       this.stepCommand(1);
       this.checkEnd();
       this.runTriggers();
+      this.checkDuels();
       for (const r of this.regs) {
         r.engagedWith.clear();
         r.flankHits = 0;
@@ -1707,6 +1709,48 @@ export class World {
       if (o.fireTarget === rid) o.fireTarget = -1;
     }
     this.events.push({ k: 'defect', reg: rid });
+  }
+
+  // ───────────────────────── 武將單挑 ─────────────────────────
+
+  private duelT = new Map<string, number>();
+  /** 兩軍武將在 8 m 內相遇 → 單挑：依武力判勝負 */
+  private checkDuels(): void {
+    const s = this.s;
+    const gens = this.regs.filter((r) => r.general?.alive && !r.routing && !r.gone);
+    for (const a of gens) {
+      for (const b of gens) {
+        if (a.team >= b.team || a.team === b.team) continue;
+        const ia = a.general!.soldier;
+        const ib = b.general!.soldier;
+        const d = Math.hypot(s.x[ia] - s.x[ib], s.z[ia] - s.z[ib]);
+        if (d > 8) continue;
+        const key = `${a.general!.id}|${b.general!.id}`;
+        if ((this.duelT.get(key) ?? -999) > this.t - 60) continue;
+        this.duelT.set(key, this.t);
+        const ga = GENERALS[a.general!.id];
+        const gb = GENERALS[b.general!.id];
+        const pa = ga.war ** 4 / (ga.war ** 4 + gb.war ** 4);
+        const aWins = this.rng() < pa;
+        const [win, lose, gw, gl] = aWins ? [a, b, ga, gb] : [b, a, gb, ga];
+        const li = lose.general!.soldier;
+        // 武力差距大 → 一合斬於馬下；否則重傷敗走
+        const killed = gw.war - gl.war >= 8 || this.rng() < 0.35;
+        if (killed) this.damage(li, 1e6, win.general!.soldier);
+        else {
+          s.hp[li] = Math.max(1, s.hp[li] * 0.35);
+          lose.morale -= 15;
+        }
+        for (const r of this.regs) {
+          if (r.gone) continue;
+          if (r.team === win.team) r.morale = Math.min(100, r.morale + 12);
+          else if (!killed) r.morale -= 8;
+        }
+        s.stun[ia] = s.stun[ib] = 1.5;
+        this.events.push({ k: 'duel', a: ga.name, b: gb.name, winner: gw.name, killed, x: s.x[li], z: s.z[li] });
+        return;
+      }
+    }
   }
 
   // ───────────────────────── 武將技與計策 ─────────────────────────
