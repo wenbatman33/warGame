@@ -46,6 +46,8 @@ export class Battle {
   slowmo = 0;
   /** 開場鏡頭倒數 */
   private introT = 0;
+  /** 跟隨中的軍團（-1＝無） */
+  follow = -1;
 
   readonly sc: Scenario;
 
@@ -255,6 +257,11 @@ export class Battle {
       }
     }
     this.controls.update(raw);
+    if (this.follow >= 0) {
+      const r = this.world.regs[this.follow];
+      if (!r || r.gone) this.follow = -1;
+      else this.cam.set(r.mx, r.mz, undefined, undefined, false);
+    }
     this.cam.update(raw);
     this.updateLook();
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);

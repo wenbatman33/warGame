@@ -645,6 +645,12 @@ export class Hud {
       this.toggleTerrain();
       return true;
     }
+    if (k === 'c') {
+      const ids = [...this.b.controls.selected];
+      this.b.follow = this.b.follow >= 0 || ids.length === 0 ? -1 : ids[0];
+      this.toast(this.b.follow >= 0 ? `鏡頭跟隨：${this.b.world.regs[this.b.follow].name}（C 取消）` : '取消跟隨', 'info', true);
+      return true;
+    }
     if (k === 'escape' && this.pending) {
       this.cancelPick();
       return true;

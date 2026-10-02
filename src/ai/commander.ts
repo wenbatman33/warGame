@@ -38,6 +38,7 @@ export class AiCommander {
       for (const r of mine) if (r.ai.role === 'hold') r.ai.role = r.ranged ? 'ranged' : r.unit.mounted ? 'flank' : 'line';
       w.events.push({ k: 'msg', text: `${w.teams[this.team].name}全軍出擊！`, tone: this.team === w.player ? 'good' : 'bad' });
     }
+    if (this.diff !== 'easy' && started) this.stratagems(mine, enemies);
     for (const r of mine) {
       this.ability(r, enemies);
       switch (r.ai.role) {
@@ -271,6 +272,31 @@ export class AiCommander {
       }
     }
     if (use) w.useAbility(r.id);
+  }
+
+  private stratT = 0;
+  /** 計策：擂鼓穩住動搖的戰線、火矢打密集敵陣或燒敵營 */
+  private stratagems(mine: Regiment[], enemies: Regiment[]): void {
+    const w = this.w;
+    if (w.t < this.stratT) return;
+    this.stratT = w.t + (this.diff === 'hard' ? 6 : 12);
+    const cmd = w.teams[this.team].command;
+    // 擂鼓：交戰中且動搖的己方軍團
+    const shaky = mine.find((r) => r.engagedWith.size > 0 && r.morale < 45);
+    if (shaky && cmd >= 3) {
+      w.useStratagem(this.team, 'drums', shaky.mx, shaky.mz);
+      return;
+    }
+    // 火矢：敵方營寨（有糧的）或正在跟我軍肉搏以外的密集敵陣
+    if (cmd >= 4) {
+      const st = w.structs.find((s) => s.team !== this.team && !s.burnt && s.kind !== 'water' && s.fire === 0 && mine.some((r) => Math.hypot(r.mx - s.x, r.mz - s.z) < 150));
+      if (st) {
+        w.useStratagem(this.team, 'firearrows', st.x, st.z);
+        return;
+      }
+      const tgt = enemies.find((e) => !e.routing && e.engagedWith.size === 0 && e.alive > 60 && mine.some((r) => Math.hypot(r.mx - e.mx, r.mz - e.mz) < 140));
+      if (tgt && cmd >= 6) w.useStratagem(this.team, 'firearrows', tgt.mx, tgt.mz);
+    }
   }
 
   private enemyCenter(enemies: Regiment[]): [number, number] | null {

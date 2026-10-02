@@ -1913,6 +1913,8 @@ export class World {
     const def = STRATAGEMS[id];
     const ts = this.teams[team];
     if (ts.command < def.cost) return '軍令點不足';
+    // 地點型計策要在我軍 160 m 內（斥候除外）
+    if (def.target === 'area' && id !== 'scout' && !this.regs.some((o) => o.team === team && !o.gone && !o.routing && Math.hypot(o.mx - x, o.mz - z) < 160)) return '距離我軍太遠（需在 160 m 內）';
     const t = this.t;
     const friends = (rad: number) => this.regs.filter((o) => o.team === team && !o.gone && Math.hypot(o.mx - x, o.mz - z) < rad + o.radius * 0.5);
     switch (id) {
