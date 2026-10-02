@@ -939,15 +939,18 @@ export class Hud {
     const w = b.world;
     const hints = b.sc.hints;
     if (!hints || !SETTINGS.tips) return;
-    if (this.advisorEl && performance.now() - this.advisorT > 11000) this.closeAdvisor();
-    if (this.advisorEl) return;
+    const shownFor = performance.now() - this.advisorT;
+    if (this.advisorEl && shownFor > 12000) this.closeAdvisor();
+    // 提示顯示超過 3.5 秒、而下一則已經可以出現 → 直接換下一則（教學步驟比較順）
+    if (this.advisorEl && shownFor < 3500) return;
     const since = b.phase === 'deploy' ? -1 : w.t - ((w.flags.startT as number) ?? 0);
     for (let k = 0; k < hints.length; k++) {
       if (this.hintsDone.has(k)) continue;
       const hnt = hints[k];
-      const ok = hnt.when ? b.phase === 'battle' && hnt.when(w) : hnt.at !== undefined && (hnt.at < 0 ? b.phase === 'deploy' : since >= hnt.at && b.phase === 'battle');
+      const ok = hnt.when ? hnt.when(w) : hnt.at !== undefined && (hnt.at < 0 ? b.phase === 'deploy' : since >= hnt.at && b.phase === 'battle');
       if (!ok) continue;
       this.hintsDone.add(k);
+      this.closeAdvisor();
       this.showAdvisor(hnt.text);
       return;
     }

@@ -207,6 +207,7 @@ export class Controls {
       cx /= regs.length;
       cz /= regs.length;
       for (const r of regs) this.hooks.onDeployPlace?.(r.id, x + r.cx - cx, z + r.cz - cz, r.facing);
+      this.hooks.onOrder?.('move', ids);
       return;
     }
     let gx = 0;
@@ -286,6 +287,7 @@ export class Controls {
   commitLine(plan: PlanPreview[], run: boolean): void {
     if (this.hooks.deployMode?.()) {
       for (const p of plan) this.hooks.onDeployPlace?.(p.reg.id, p.x, p.z, p.facing, p.width);
+      this.hooks.onOrder?.('line', plan.map((p) => p.reg.id));
       return;
     }
     for (const p of plan) this.world.commandMove([p.reg.id], p.x, p.z, p.facing, p.width, run);

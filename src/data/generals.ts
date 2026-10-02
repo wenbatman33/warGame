@@ -32,7 +32,8 @@ export type GeneralId =
   | 'fengxi'
   | 'shamoke'
   | 'guohuai'
-  | 'xunyou';
+  | 'xunyou'
+  | 'yanliang';
 
 export type AbilityId =
   | 'rally' // 號令：範圍士氣＋、潰兵重整
@@ -115,5 +116,6 @@ export const GENERALS: Record<GeneralId, GeneralDef> = {
   fengxi: { id: 'fengxi', name: '馮習', faction: 'shu', war: 75, lead: 70, int: 55, model: 'gen_sword', ability: null, title: '前部督' },
   shamoke: { id: 'shamoke', name: '沙摩柯', faction: 'shu', war: 90, lead: 55, int: 25, model: 'gen_glaive', ability: 'berserk', title: '五溪蠻王' },
   guohuai: { id: 'guohuai', name: '郭淮', faction: 'wei', war: 78, lead: 85, int: 75, model: 'gen_spear', ability: 'steady', title: '雍州刺史' },
+  yanliang: { id: 'yanliang', name: '顏良', faction: 'yuan', war: 92, lead: 70, int: 40, model: 'gen_glaive', ability: 'fury', title: '河北名將' },
   xunyou: { id: 'xunyou', name: '荀攸', faction: 'wei', war: 30, lead: 70, int: 95, model: 'gen_fan', ability: null, title: '謀主' },
 };

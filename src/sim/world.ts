@@ -1790,6 +1790,7 @@ export class World {
     }
     r.general.cd = t + ab.cd * (1.2 - g.int / 250);
     this.events.push({ k: 'ability', reg: r.id, name: ab.name });
+    if (r.team === this.player) this.flags.did_ability = true;
     return true;
   }
 
@@ -1881,6 +1882,7 @@ export class World {
     }
     ts.command -= def.cost;
     this.events.push({ k: 'stratagem', team, id, x, z });
+    if (team === this.player) this.flags.did_strat = true;
     return null;
   }
 

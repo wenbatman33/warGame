@@ -80,11 +80,17 @@ export class Battle {
       onPause: () => this.togglePause(),
       onSpeed: (s) => this.setSpeed(s),
       onOrder: (kind) => {
+        // 教學關用的操作旗標
+        this.world.flags[`did_${kind}`] = true;
         audio.play('ui_order');
         audio.voice(kind === 'attack' || kind === 'struct' ? 'ack_attack' : 'ack_move');
       },
       onSelect: (ids) => {
-        if (ids.length) audio.play('ui_select');
+        if (ids.length) {
+          audio.play('ui_select');
+          this.world.flags.did_select = true;
+          if (ids.some((id) => this.world.regs[id].ranged)) this.world.flags.did_selectRanged = true;
+        }
         this.hud.refreshSelection();
       },
       onTargetPick: (x, z) => this.hud.pickTarget(x, z),
