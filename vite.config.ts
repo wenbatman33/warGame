@@ -5,5 +5,5 @@ export default defineConfig({
   base: './',
   server: { port: 5200, host: true },
   build: { target: 'es2022', chunkSizeWarningLimit: 2000 },
-  test: { include: ['tests/**/*.test.ts'] },
+  test: { include: ['tests/**/*.test.ts'], exclude: ['tests/tmp/**', 'node_modules/**'] },
 });

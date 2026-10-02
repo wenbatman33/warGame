@@ -362,8 +362,15 @@ export class Hud {
       const state = st.burnt ? '（焚毀）' : st.fire > 0 ? ' 🔥' : '';
       (e.firstChild as HTMLElement).textContent = `${icon}${st.name}${state}`;
       const bar = e.querySelector('i') as HTMLElement;
-      bar.style.width = `${st.frac * 100}%`;
-      bar.style.background = st.fire > 0 ? '#ff7a2a' : w.teams[st.team].color;
+      // 本陣被佔領中：紅條顯示佔領進度
+      if (st.capture > 0.02 && !st.burnt) {
+        bar.style.width = `${st.capture * 100}%`;
+        bar.style.background = '#ff3b2a';
+        (e.firstChild as HTMLElement).textContent += st.kind === 'water' ? ' 爭奪中' : ' 失守中！';
+      } else {
+        bar.style.width = `${st.frac * 100}%`;
+        bar.style.background = st.fire > 0 ? '#ff7a2a' : w.teams[st.team].color;
+      }
       e.classList.toggle('enemy', st.team !== w.player);
       e.classList.toggle('burnt', st.burnt);
     }
@@ -884,6 +891,7 @@ export class Hud {
     this.updateInfo();
     if (this.slowT % 2 === 0) this.minimap.draw();
     this.updateHints();
+    this.hqAlarm();
     // 地形提示（滑鼠所在點）
     const m = b.controls.mouse;
     if (m.inside && matchMedia('(pointer:fine)').matches) {
@@ -908,6 +916,19 @@ export class Hud {
     }
   }
   private music = 'battle';
+
+  private hqAlarmT = -1e9;
+  /** 敵軍逼近我方本陣時警告（本陣失守＝戰敗） */
+  private hqAlarm(): void {
+    const w = this.b.world;
+    const hq = w.teams[w.player].hq;
+    if (!hq || hq.burnt || this.b.phase !== 'battle' || performance.now() - this.hqAlarmT < 30000) return;
+    const threat = w.regs.find((r) => r.team !== w.player && !r.gone && !r.routing && Math.hypot(r.mx - hq.x, r.mz - hq.z) < 70);
+    if (!threat) return;
+    this.hqAlarmT = performance.now();
+    this.toast(`⚠ 敵軍逼近「${hq.name}」！本陣失守＝戰敗`, 'bad', false, () => this.b.cam.set(hq.x, hq.z, 140, undefined, false));
+    audio.play('gong');
+  }
 
   // ───────────── 軍師提示 ─────────────
   private hintsDone = new Set<number>();

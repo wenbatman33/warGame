@@ -47,7 +47,7 @@ describe('陣型', () => {
     }
     expect(Math.abs(sx / n)).toBeLessThan(0.01);
     expect(Math.abs(sz / n)).toBeLessThan(0.01);
-    expect(r.frontage(n)).toBeCloseTo(20 * UNITS.sword.spacing[0], 3);
+    expect(r.frontage(n)).toBeCloseTo(UNITS.sword.width * UNITS.sword.spacing[0], 3);
   });
 });
 
