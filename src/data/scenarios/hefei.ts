@@ -119,7 +119,7 @@ export const HEFEI: Scenario = {
   ],
   stars: [
     { text: '擊潰吳軍', check: (w) => w.winner === 0 },
-    { text: '擊殺孫權', check: (w) => w.regs.some((r) => r.general?.id === 'sunquan' && !r.general.alive) },
+    { text: '擊殺孫權', check: (w) => w.regs.some((r) => r.general?.id === 'sunquan' && !r.general.alive && !r.general.fled) },
     { text: '傷亡少於三成', check: (w) => w.winner === 0 && w.teams[0].dead + w.teams[0].fled < w.teams[0].initialStrength * 0.3 },
   ],
   triggers: [

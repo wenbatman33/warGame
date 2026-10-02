@@ -102,7 +102,7 @@ export function buildCustomScenario(o: CustomOptions): Scenario {
     stars: [
       { text: '擊潰敵軍', check: (w) => w.winner === 0 },
       { text: '傷亡少於四成', check: (w) => w.winner === 0 && w.teams[0].dead + w.teams[0].fled < w.teams[0].initialStrength * 0.4 },
-      o.depots ? { text: '焚燒敵軍糧倉', check: (w) => w.teams[1].depotsBurnt > 0 } : { text: '斬殺敵方主帥', check: (w) => w.regs.some((x) => x.team === 1 && x.general && !x.general.alive) },
+      o.depots ? { text: '焚燒敵軍糧倉', check: (w) => w.teams[1].depotsBurnt > 0 } : { text: '斬殺敵方主帥', check: (w) => w.regs.some((x) => x.team === 1 && x.general && !x.general.alive && !x.general.fled) },
     ],
   };
 }

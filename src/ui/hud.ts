@@ -231,6 +231,7 @@ export class Hud {
 
   dispose(): void {
     removeEventListener('resize', this.onResize);
+    this.minimap.dispose();
     this.root.remove();
     document.body.classList.remove('picking');
   }
@@ -474,7 +475,7 @@ export class Hud {
       <div class="row"><span>陣型</span><b>${forms[r.formation]}</b>${r.hold ? '<small>🛡 堅守</small>' : ''}${r.run ? '<small>🏃 奔跑</small>' : ''}</div>
       <div class="row"><span>糧況</span><b>${sup.icon}${sup.name}</b>${t.panicUntil > w.t ? '<small style="color:#ff6a55">😱 軍心大亂</small>' : ''}</div>
       ${terr.length ? `<div class="row t">${terr.join('<br>')}</div>` : ''}
-      ${gen ? `<div class="row t">⭐ ${gen.name}（武${gen.war} 統${gen.lead} 智${gen.int}）${r.general!.alive ? '' : '<b style="color:#ff6a55">陣亡</b>'}</div>` : ''}
+      ${gen ? `<div class="row t">⭐ ${gen.name}（武${gen.war} 統${gen.lead} 智${gen.int}）${r.general!.alive ? '' : r.general!.fled ? '<b style="color:#ffc24a">逃脫</b>' : '<b style="color:#ff6a55">陣亡</b>'}</div>` : ''}
       ${buffs.length ? `<div class="row t">✨ ${buffs.join('、')}</div>` : ''}`;
   }
 
@@ -538,7 +539,7 @@ export class Hud {
       audio.voice('ack_retreat');
     }, 'red');
     for (const r of regs) {
-      if (!r.general?.alive) continue;
+      if (!r.general?.alive || this.b.phase !== 'battle') continue;
       const gd = GENERALS[r.general.id];
       if (!gd.ability) continue;
       const ab = ABILITIES[gd.ability];

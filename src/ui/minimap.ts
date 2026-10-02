@@ -32,7 +32,14 @@ export class Minimap {
       go(e);
     });
     this.canvas.addEventListener('pointermove', (e) => down && go(e));
-    addEventListener('pointerup', () => (down = false));
+    this.onUp = () => (down = false);
+    addEventListener('pointerup', this.onUp);
+  }
+
+  private onUp: () => void;
+
+  dispose(): void {
+    removeEventListener('pointerup', this.onUp);
   }
 
   private toMap(x: number, z: number): [number, number] {

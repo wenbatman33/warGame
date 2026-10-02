@@ -19,7 +19,7 @@ export interface CampaignEntry {
 }
 
 export const CAMPAIGN: CampaignEntry[] = [
-  { id: 'baima', name: '白馬之圍（教學）', year: '200', x: 60, y: 21, scenario: BAIMA, image: 'battle/battle_custom.jpg' },
+  { id: 'baima', name: '白馬之圍（教學）', year: '200', x: 60, y: 21, scenario: BAIMA, image: 'battle/battle_baima.jpg' },
   { id: 'guandu', name: '官渡之戰', year: '200', x: 50, y: 33, scenario: GUANDU, image: 'battle/battle_guandu.jpg' },
   { id: 'chibi', name: '赤壁之戰', year: '208', x: 61, y: 63, scenario: CHIBI, image: 'battle/battle_chibi.jpg' },
   { id: 'hefei', name: '合肥之戰', year: '215', x: 78, y: 41, scenario: HEFEI, image: 'battle/battle_hefei.jpg' },

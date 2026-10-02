@@ -14,7 +14,7 @@ import { Overlays } from './overlays';
 import { Particles } from './particles';
 import { SoldierRenderer } from './soldiers';
 import { LIGHT, Stage, type Quality } from './stage';
-import { buildTerrainMesh, heightTexture } from './terrain';
+import { buildTerrainMesh, heightTexture, trample } from './terrain';
 import { buildVegetation, windTime } from './vegetation';
 import { buildWater, waterTime } from './water';
 
@@ -38,6 +38,10 @@ export class BattleView {
   private teamColors: THREE.Color[];
   private sunDir = new THREE.Vector3();
   private fireLights: THREE.PointLight[] = [];
+  private trampleData: Uint8Array;
+  private trampleTex: THREE.DataTexture;
+  private trampleT = 0;
+  private readonly TR = 256;
   /** 渲染用遊戲時間（含插值） */
   rt = 0;
 
@@ -57,6 +61,14 @@ export class BattleView {
       this.stage.scene.add(l);
     }
     const hf = world.hf;
+    // 戰場踐踏貼圖
+    this.trampleData = new Uint8Array(this.TR * this.TR);
+    this.trampleTex = new THREE.DataTexture(this.trampleData, this.TR, this.TR, THREE.RedFormat, THREE.UnsignedByteType);
+    this.trampleTex.magFilter = THREE.LinearFilter;
+    this.trampleTex.minFilter = THREE.LinearFilter;
+    this.trampleTex.needsUpdate = true;
+    trample.tex.value = this.trampleTex;
+    trample.play.value = hf.play;
     this.stage.scene.add(buildTerrainMesh(hf, sc.map.seed));
     this.stage.scene.add(buildWater(hf, heightTexture(hf), this.sunDir));
     const avoid = world.structs.map((s) => ({ x: s.x, z: s.z, r: s.radius + 6 }));
@@ -84,7 +96,7 @@ export class BattleView {
     this.stage.scene.add(this.overlays.group);
     this.stage.scene.add(this.particles.group);
     this.particles.resize(innerHeight);
-    addEventListener('resize', () => this.particles.resize(innerHeight));
+    addEventListener('resize', this.onResize);
     // 營寨與糧倉
     for (const st of world.structs) {
       const f = FACTIONS[sc.teams[st.team].faction];
@@ -121,6 +133,30 @@ export class BattleView {
     this.wagonGeo = world.teams.map((t) => propGeometry('wagon', { team: t.color }));
   }
 
+  private onResize = (): void => this.particles.resize(innerHeight);
+
+  dispose(): void {
+    removeEventListener('resize', this.onResize);
+    this.stage.dispose();
+  }
+
+  /** 在世界座標 (x,z) 踩出一塊泥地 */
+  private stomp(x: number, z: number, amount: number, r = 1): void {
+    const n = this.TR;
+    const play = this.world.hf.play;
+    const cx = ((x / play) + 0.5) * n;
+    const cz = ((z / play) + 0.5) * n;
+    for (let j = Math.floor(cz - r); j <= Math.ceil(cz + r); j++) {
+      for (let i = Math.floor(cx - r); i <= Math.ceil(cx + r); i++) {
+        if (i < 0 || j < 0 || i >= n || j >= n) continue;
+        const d = Math.hypot(i - cx, j - cz) / (r + 0.5);
+        if (d > 1) continue;
+        const k = j * n + i;
+        this.trampleData[k] = Math.min(255, this.trampleData[k] + amount * (1 - d));
+      }
+    }
+  }
+
   /** 模擬事件：屍體轉進屍體層 */
   consumeEvents(events: GameEvent[]): void {
     const w = this.world;
@@ -128,6 +164,7 @@ export class BattleView {
     for (const ev of events) {
       if (ev.k !== 'corpse') continue;
       const i = ev.i;
+      this.stomp(s.x[i], s.z[i], 22, 1.2);
       this.soldiers.addCorpse(w.modelOf(i), s.x[i], w.groundY(s.x[i], s.z[i]), s.z[i], s.yaw[i], ANIM_ORDER[s.anim[i]], s.animStart[i], this.teamColors[s.team[i]], s.tint[i]);
     }
   }
@@ -210,6 +247,19 @@ export class BattleView {
       }
     }
 
+    // 踐踏：交戰中的士兵把草地踩爛（每 0.5 秒）
+    this.trampleT += dt;
+    if (this.trampleT > 0.5) {
+      this.trampleT = 0;
+      for (const r of w.regs) {
+        if (r.gone || r.engagedWith.size === 0) continue;
+        for (let k = 0; k < r.members.length; k += 4) {
+          const i = r.members[k];
+          this.stomp(s.x[i], s.z[i], 5, 0.8);
+        }
+      }
+      this.trampleTex.needsUpdate = true;
+    }
     // 火光
     const burning = this.structs.filter((sv) => sv.st.fire > 0.05).sort((a, b) => b.st.fire - a.st.fire);
     const night = this.world.sc.time === 'night' ? 1.5 : this.world.sc.time === 'dusk' ? 1.2 : 1;

@@ -36,6 +36,8 @@ export interface GeneralState {
   name: string;
   soldier: number;
   alive: boolean;
+  /** 逃出戰場（不是陣亡） */
+  fled?: boolean;
   cd: number;
 }
 
@@ -61,6 +63,11 @@ export class Regiment {
   radius = 10;
   path: [number, number][] = [];
   pathI = 0;
+  /** 上次尋路請求的目標點 */
+  pathGoalX = Infinity;
+  pathGoalZ = Infinity;
+  /** 有傷亡、待補位 */
+  needReslot = false;
   order: Order = { type: 'idle', x: 0, z: 0, facing: 0, target: -1, struct: -1 };
   run = false;
   hold = false;

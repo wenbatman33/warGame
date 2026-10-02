@@ -25,6 +25,11 @@ float tNoise(vec2 p) {
 }
 `;
 
+/** 戰場踐踏貼圖（激戰、屍體處變泥土） */
+const blank = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
+blank.needsUpdate = true;
+export const trample = { tex: { value: blank as THREE.Texture }, play: { value: 560 } };
+
 /** 地形圖開關（0..1 淡入淡出）與基準高度 */
 export const terrainView = { value: 0 };
 export const terrainBase = { value: 3 };
@@ -104,11 +109,13 @@ export function buildTerrainMesh(hf: Heightfield, seed: number): THREE.Mesh {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTerrainView = terrainView;
     sh.uniforms.uTerrainBase = terrainBase;
+    sh.uniforms.uTrample = trample.tex;
+    sh.uniforms.uTramplePlay = trample.play;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nuniform float uTerrainView;\nuniform float uTerrainBase;\n${GLSL_NOISE}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nuniform float uTerrainView;\nuniform float uTerrainBase;\nuniform sampler2D uTrample;\nuniform float uTramplePlay;\n${GLSL_NOISE}`)
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
@@ -120,6 +127,11 @@ export function buildTerrainMesh(hf: Heightfield, seed: number): THREE.Mesh {
     float green = smoothstep(0.0, 0.25, diffuseColor.g - max(diffuseColor.r, diffuseColor.b));
     diffuseColor.rgb *= 0.93 + n1 * 0.12 + (n2 - 0.5) * 0.08;
     diffuseColor.rgb *= 1.0 - green * step(0.8, n3) * 0.12;
+    // 踐踏：草地被踩成泥（帶噪聲邊緣）
+    vec2 tuv = vWPos.xz / uTramplePlay + 0.5;
+    float tr = texture2D(uTrample, tuv).r;
+    tr = smoothstep(0.08, 0.7, tr + (n2 - 0.5) * 0.25);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.29, 0.2) * (0.85 + n1 * 0.3), tr * 0.75);
   }
   if (uTerrainView > 0.001) {
     // 地形圖：高度色帶（低＝藍綠、高＝暖橘）＋ 每 2 m 等高線、每 10 m 粗線

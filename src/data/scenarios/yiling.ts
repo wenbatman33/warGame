@@ -137,7 +137,7 @@ export const YILING: Scenario = {
   stars: [
     { text: '擊潰蜀軍', check: (w) => w.winner === 0 },
     { text: '燒毀 6 座以上蜀營', check: (w) => w.structs.filter((s) => s.kind === 'camp' && s.burnt).length >= 6 },
-    { text: '劉備大營焚毀或劉備陣亡', check: (w) => w.structs.some((s) => s.kind === 'hq' && s.team === 1 && s.burnt) || w.regs.some((r) => r.general?.id === 'liubei' && !r.general.alive) },
+    { text: '劉備大營焚毀或劉備陣亡', check: (w) => w.structs.some((s) => s.kind === 'hq' && s.team === 1 && s.burnt) || w.regs.some((r) => r.general?.id === 'liubei' && !r.general.alive && !r.general.fled) },
   ],
   triggers: [
     {

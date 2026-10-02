@@ -117,10 +117,14 @@ export class SpatialHash {
     return j * this.n + i;
   }
 
+  private keys = new Int32Array(0);
+  private fill = new Int32Array(0);
+
   rebuild(s: Soldiers): void {
     const cnt = this.cnt;
     cnt.fill(0);
-    const keys = new Int32Array(s.count);
+    if (this.keys.length < s.cap) this.keys = new Int32Array(s.cap);
+    const keys = this.keys;
     for (let i = 0; i < s.count; i++) {
       if (s.state[i] !== SState.Alive) {
         keys[i] = -1;
@@ -136,7 +140,9 @@ export class SpatialHash {
       acc += cnt[k];
     }
     this.start[cnt.length] = acc;
-    const fill = new Int32Array(cnt.length);
+    if (this.fill.length !== cnt.length) this.fill = new Int32Array(cnt.length);
+    const fill = this.fill;
+    fill.fill(0);
     if (this.items.length < s.count) this.items = new Int32Array(s.cap);
     for (let i = 0; i < s.count; i++) {
       const k = keys[i];

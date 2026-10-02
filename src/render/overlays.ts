@@ -12,6 +12,7 @@ export interface PlanPreview {
 }
 
 const _c = new THREE.Color();
+const _m4 = new THREE.Matrix4();
 const _slot: [number, number] = [0, 0];
 
 export class Overlays {
@@ -111,8 +112,7 @@ export class Overlays {
 
   private dot(x: number, z: number, color: THREE.Color): void {
     if (this.dotN >= 6000) return;
-    const m = new THREE.Matrix4().makeTranslation(x, this.y(x, z) + 0.02, z);
-    this.dots.setMatrixAt(this.dotN, m);
+    this.dots.setMatrixAt(this.dotN, _m4.makeTranslation(x, this.y(x, z) + 0.02, z));
     this.dots.setColorAt(this.dotN, color);
     this.dotN++;
   }

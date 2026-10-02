@@ -89,6 +89,8 @@ export class World {
   bridges: { x: number; z: number; angle: number; length: number }[] = [];
   /** 難度：各隊攻擊倍率 */
   teamAtk = [1, 1];
+  /** 各隊「後方」方向（單位向量，由戰場中心指向己方本陣） */
+  homeDir: [number, number][] = [];
 
   /** 套用難度（敵軍攻擊與士氣） */
   setDifficulty(d: 'easy' | 'normal' | 'hard'): void {
@@ -158,6 +160,21 @@ export class World {
       this.nav.blockRing(st.x, st.z, palR, st.gate, gap);
     }
     for (const team of this.teams) team.initialStrength = this.regs.filter((r) => r.team === team.index).reduce((a, r) => a + r.alive, 0);
+    // 後方方向：己方本陣（沒有就用初始兵力重心）相對雙方重心的中點
+    const centroid = (t: number): [number, number] => {
+      const hq = this.teams[t].hq;
+      if (hq) return [hq.x, hq.z];
+      const rs = this.regs.filter((r) => r.team === t);
+      return [rs.reduce((a, r) => a + r.cx, 0) / Math.max(1, rs.length), rs.reduce((a, r) => a + r.cz, 0) / Math.max(1, rs.length)];
+    };
+    const homes = this.teams.map((t) => centroid(t.index));
+    const mid: [number, number] = [(homes[0][0] + homes[1][0]) / 2, (homes[0][1] + homes[1][1]) / 2];
+    this.homeDir = homes.map(([x, z]) => {
+      const dx = x - mid[0];
+      const dz = z - mid[1];
+      const l = Math.hypot(dx, dz) || 1;
+      return [dx / l, dz / l] as [number, number];
+    });
     const hs: number[] = [];
     for (let z = -hf.play / 2; z < hf.play / 2; z += 16) for (let x = -hf.play / 2; x < hf.play / 2; x += 16) hs.push(hf.height(x, z));
     hs.sort((a, b) => a - b);
@@ -342,10 +359,12 @@ export class World {
       const r = this.regs[id];
       if (!r || r.gone || r.routing) continue;
       const hq = this.teams[r.team].hq;
-      const back = this.retreatPoint(r);
-      const tx = hq ? hq.x + (this.rng() - 0.5) * 40 : back[0];
-      const tz = hq ? hq.z + (r.team === 0 ? -35 : 35) : back[1];
-      r.order = { type: 'retreat', x: tx, z: tz, facing: r.team === 0 ? Math.PI : 0, target: -1, struct: -1 };
+      const [hx, hz] = this.homeDir[r.team] ?? [0, 1];
+      // 撤到本陣前方 35 m（朝敵方那一側），沒有本陣就往後撤 80 m
+      const side = (this.rng() - 0.5) * 40;
+      const tx = hq ? hq.x - hx * 35 + hz * side : r.mx + hx * 80;
+      const tz = hq ? hq.z - hz * 35 - hx * side : r.mz + hz * 80;
+      r.order = { type: 'retreat', x: tx, z: tz, facing: Math.atan2(-hx, -hz), target: -1, struct: -1 };
       r.run = true;
       this.planPath(r, tx, tz);
       for (const i of r.members) this.s.target[i] = -1;
@@ -367,10 +386,32 @@ export class World {
     r.state = 'moving';
   }
 
+  /** 潰逃方向：沿己方「後方」逃到地圖邊緣外 */
   retreatPoint(r: Regiment): [number, number] {
-    const p = this.hf.play / 2 - 6;
-    const sideZ = this.sc.teams[r.team].deploy?.z ?? (r.team === 0 ? p : -p);
-    return [r.mx, sideZ > 0 ? p + 10 : -p - 10];
+    const [dx, dz] = this.homeDir[r.team] ?? [0, r.team === 0 ? 1 : -1];
+    const p = this.hf.play / 2 + 10;
+    // 從目前位置沿後方方向延伸到邊界
+    const tx = dx > 0 ? (p - r.mx) / dx : dx < 0 ? (-p - r.mx) / dx : Infinity;
+    const tz = dz > 0 ? (p - r.mz) / dz : dz < 0 ? (-p - r.mz) / dz : Infinity;
+    const t = Math.max(0, Math.min(tx, tz));
+    return [r.mx + dx * t, r.mz + dz * t];
+  }
+
+  /** 面向最近的敵軍（沒有就面向敵方方向） */
+  faceEnemy(r: Regiment): number {
+    let best: Regiment | null = null;
+    let bd = Infinity;
+    for (const e of this.regs) {
+      if (e.team === r.team || e.gone || e.routing) continue;
+      const d = Math.hypot(e.mx - r.mx, e.mz - r.mz);
+      if (d < bd) {
+        bd = d;
+        best = e;
+      }
+    }
+    if (best) return Math.atan2(best.mx - r.mx, best.mz - r.mz);
+    const [dx, dz] = this.homeDir[r.team] ?? [0, 1];
+    return Math.atan2(-dx, -dz);
   }
 
   // ───────────────────────── 主迴圈 ─────────────────────────
@@ -389,6 +430,12 @@ export class World {
       this.updateNearEnemies();
       for (const r of this.regs) if (!r.gone) this.updateTerrain(r);
     }
+    if (this.tick % 20 === 0) {
+      for (const r of this.regs) {
+        if (r.needReslot && !r.gone && !r.routing) this.reslot(r);
+        r.needReslot = false;
+      }
+    }
     for (const r of this.regs) this.stepRegiment(r, dt);
     this.stepSoldiers(dt);
     this.separate();
@@ -397,8 +444,10 @@ export class World {
     if (this.tick % 3 === 0) this.stepMorale(dt * 3);
     if (this.tick % 30 === 0) {
       this.stepSupply(1);
-      this.stepStructures(1);
-      this.stepCommand(1);
+      if (this.started) {
+        this.stepStructures(1);
+        this.stepCommand(1);
+      }
       this.checkEnd();
       this.runTriggers();
       this.checkDuels();
@@ -586,11 +635,12 @@ export class World {
 
   private moveAnchorToward(r: Regiment, x: number, z: number, dt: number, run: boolean, repath: number): boolean {
     r.repathT -= dt;
-    const last = r.path.length ? r.path[r.path.length - 1] : null;
-    if (r.repathT <= 0 || !last || Math.hypot(last[0] - x, last[1] - z) > 12) {
+    if (r.repathT <= 0 || Math.hypot(r.pathGoalX - x, r.pathGoalZ - z) > 12) {
       r.path = this.nav.findPath(r.cx, r.cz, x, z);
       r.pathI = 0;
       r.repathT = repath;
+      r.pathGoalX = x;
+      r.pathGoalZ = z;
     }
     return this.followPath(r, dt, run);
   }
@@ -663,10 +713,19 @@ export class World {
 
   // ───────────────────────── 士兵層 ─────────────────────────
 
+  private cohSum = new Float32Array(0);
+  private cohN = new Int32Array(0);
+
   private stepSoldiers(dt: number): void {
     const s = this.s;
-    let cohesionSum = new Float32Array(this.regs.length);
-    let cohesionN = new Int32Array(this.regs.length);
+    if (this.cohSum.length < this.regs.length) {
+      this.cohSum = new Float32Array(this.regs.length + 16);
+      this.cohN = new Int32Array(this.regs.length + 16);
+    }
+    const cohesionSum = this.cohSum;
+    const cohesionN = this.cohN;
+    cohesionSum.fill(0);
+    cohesionN.fill(0);
     for (let i = 0; i < s.count; i++) {
       if (s.state[i] !== SState.Alive) continue;
       const r = this.regs[s.reg[i]];
@@ -731,8 +790,8 @@ export class World {
         const sd = Math.hypot(s.x[i] - slotX, s.z[i] - slotZ);
         cohesionSum[r.id] += sd;
         cohesionN[r.id]++;
-        // 近戰目標
-        const tgt = this.meleeTarget(i, r, slotX, slotZ);
+        // 近戰目標（部署階段不打）
+        const tgt = this.started ? this.meleeTarget(i, r, slotX, slotZ) : -1;
         if (tgt >= 0) {
           const ex = s.x[tgt];
           const ez = s.z[tgt];
@@ -807,7 +866,6 @@ export class World {
         r.cohesion = avg < 2 ? 1 : avg < 5 ? 0.75 : avg < 10 ? 0.45 : 0.25;
       }
     }
-    cohesionSum = cohesionN = null!;
   }
 
   private pickAnim(i: number, r: Regiment, speed: number): void {
@@ -830,7 +888,7 @@ export class World {
     const s = this.s;
     let tg = s.target[i];
     if (tg >= 0) {
-      const ok = s.state[tg] === SState.Alive && Math.hypot(s.x[tg] - slotX, s.z[tg] - slotZ) < RULES.tether + (r.unit.mounted ? 6 : 0);
+      const ok = s.state[tg] === SState.Alive && s.team[tg] !== s.team[i] && Math.hypot(s.x[tg] - slotX, s.z[tg] - slotZ) < RULES.tether + (r.unit.mounted ? 6 : 0);
       if (!ok) tg = s.target[i] = -1;
     }
     if (r.nearEnemies.length === 0 || r.order.type === 'retreat') {
@@ -995,6 +1053,7 @@ export class World {
   }
 
   private rangedStep(i: number, r: Regiment, dt: number): void {
+    if (!this.started) return;
     const s = this.s;
     const rd = r.unit.ranged!;
     s.reload[i] -= dt * (r.stamina < 30 ? 0.8 : 1);
@@ -1135,7 +1194,7 @@ export class World {
       this.onGeneralDown(r);
     }
     if (r.members.length === 0) r.state = 'destroyed';
-    else if (r.lostThisTick > 0 && this.tick % 20 === 0) this.reslot(r);
+    else r.needReslot = true;
   }
 
   private soldierGone(i: number): void {
@@ -1146,7 +1205,10 @@ export class World {
     if (idx >= 0) r.members.splice(idx, 1);
     r.fled++;
     this.teams[r.team].fled++;
-    if (s.general[i] && r.general) r.general.alive = false;
+    if (s.general[i] && r.general) {
+      r.general.alive = false;
+      r.general.fled = true;
+    }
     if (r.members.length === 0) r.state = r.state === 'shattered' || r.routing ? 'shattered' : 'destroyed';
   }
 
@@ -1321,7 +1383,7 @@ export class World {
     r.calmT = 0;
     r.cx = r.mx;
     r.cz = r.mz;
-    r.facing = r.team === 0 ? Math.PI : 0;
+    r.facing = this.faceEnemy(r);
     r.order = { type: 'idle', x: r.cx, z: r.cz, facing: r.facing, target: -1, struct: -1 };
     r.path = [];
     this.reslot(r);
@@ -1371,10 +1433,11 @@ export class World {
         for (const r of this.regs) {
           if (r.team !== team.index || r.gone || r.morale > RULES.waverThreshold) continue;
           const n = Math.max(1, Math.floor(r.alive * 0.02));
-          for (let k = 0; k < n && r.members.length > 1; k++) {
-            const i = r.members[r.members.length - 1];
-            if (this.s.general[i]) break;
+          for (let k = 0, p = r.members.length - 1; k < n && p >= 0 && r.members.length > 1; p--) {
+            const i = r.members[p];
+            if (this.s.general[i]) continue;
             this.desert(i);
+            k++;
           }
         }
       }
@@ -1428,15 +1491,20 @@ export class World {
         // 水源：敵軍控制（無守軍）一段時間 → 易主
         if (enemies > 5 && friends === 0) {
           st.capture = Math.min(1, st.capture + dt / 20);
-          if (st.capture >= 1 && st.team !== 1 - st.team) {
+          if (st.capture >= 1) {
             const old = st.team;
             st.team = 1 - st.team;
             st.capture = 0;
-            this.events.push({ k: 'msg', text: `${this.teams[st.team].name}控制了${st.name}！${this.teams[old].name}斷水`, tone: st.team === this.player ? 'good' : 'bad' });
-            const ohq = this.teams[old].hq;
-            if (ohq) ohq.stock = Math.min(ohq.stock, ohq.maxStock * 0.22);
-            for (const r of this.regs) if (r.team === old && !r.gone) r.morale -= 12;
-            this.flags.waterT = this.t - ((this.flags.startT as number) ?? 0);
+            if (old === st.owner) {
+              // 原主失去水源：斷水
+              this.events.push({ k: 'msg', text: `${this.teams[st.team].name}控制了${st.name}！${this.teams[old].name}斷水`, tone: st.team === this.player ? 'good' : 'bad' });
+              const ohq = this.teams[old].hq;
+              if (ohq) ohq.stock = Math.min(ohq.stock, ohq.maxStock * 0.22);
+              for (const r of this.regs) if (r.team === old && !r.gone) r.morale -= 12;
+              if (typeof this.flags.waterT !== 'number') this.flags.waterT = this.t - ((this.flags.startT as number) ?? 0);
+            } else {
+              this.events.push({ k: 'msg', text: `${this.teams[st.team].name}奪回了${st.name}`, tone: st.team === this.player ? 'good' : 'bad' });
+            }
           }
         } else st.capture = Math.max(0, st.capture - dt / 30);
         continue;
@@ -1756,6 +1824,7 @@ export class World {
   // ───────────────────────── 武將技與計策 ─────────────────────────
 
   useAbility(rid: number, x?: number, z?: number): boolean {
+    if (!this.started || this.over) return false;
     const r = this.regs[rid];
     if (!r?.general?.alive || r.routing || r.general.cd > this.t) return false;
     const g = GENERALS[r.general.id];
@@ -1840,6 +1909,7 @@ export class World {
 
   /** 主帥計策：花軍令點；回傳失敗原因或 null */
   useStratagem(team: number, id: StratagemId, x: number, z: number, rid = -1): string | null {
+    if (!this.started) return '開戰後才能施放計策';
     const def = STRATAGEMS[id];
     const ts = this.teams[team];
     if (ts.command < def.cost) return '軍令點不足';

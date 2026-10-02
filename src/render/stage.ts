@@ -92,7 +92,15 @@ export class Stage {
     this.scene.fog = new THREE.Fog(LIGHT.fogColor, LIGHT.fogNear, LIGHT.fogFar);
     this.scene.background = makeSkyTexture(TIME_PRESETS.day.sky);
 
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', this.onResize);
+  }
+
+  private onResize = (): void => this.resize();
+
+  dispose(): void {
+    window.removeEventListener('resize', this.onResize);
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 
   resize(): void {

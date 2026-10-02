@@ -178,6 +178,7 @@ export class Battle {
     audio.voice('battle_start');
     audio.music('battle');
     this.hud.toast('全軍出擊！', 'gold');
+    this.hud.refreshSelection();
   }
 
   togglePause(): void {
@@ -337,9 +338,8 @@ export class Battle {
     this.controls.dispose();
     this.hud.dispose();
     this.view.stage.renderer.domElement.remove();
-    this.view.stage.renderer.dispose();
-    // 立刻釋放 GPU 記憶體（連打多場不累積）
-    this.view.stage.renderer.forceContextLoss();
+    // 釋放 GPU 記憶體與事件監聽（連打多場不累積）
+    this.view.dispose();
     audio.setAmbience({ melee: 0, cavalry: 0, marching: 0, fire: 0 });
     this.opts.onExit(result);
   }

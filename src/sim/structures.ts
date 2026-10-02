@@ -24,11 +24,14 @@ export class Structure {
   capture = 0;
   /** 營門朝向（弧度，0＝+Z） */
   gate = 0;
+  /** 原始擁有者（水源易主判斷用） */
+  readonly owner: number;
 
   constructor(id: number, kind: StructKind, team: number, x: number, z: number, stock: number, main: boolean, name: string) {
     this.id = id;
     this.kind = kind;
     this.team = team;
+    this.owner = team;
     this.x = x;
     this.z = z;
     this.stock = stock;

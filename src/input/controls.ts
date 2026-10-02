@@ -62,19 +62,36 @@ export class Controls {
     addEventListener('pointerup', this.onUp);
     addEventListener('pointercancel', this.onUp);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('contextmenu', this.onContext);
     addEventListener('keydown', this.onKeyDown);
-    addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    addEventListener('blur', () => this.keys.clear());
+    addEventListener('keyup', this.onKeyUp);
+    addEventListener('blur', this.onBlur);
   }
+
+  private onContext = (e: Event): void => e.preventDefault();
+  private onKeyUp = (e: KeyboardEvent): void => {
+    // macOS 按住 Cmd 時放開字母鍵不會有 keyup：放開 Meta 就全部清掉
+    if (e.key === 'Meta' || e.key === 'Control') this.keys.clear();
+    else this.keys.delete(e.key.toLowerCase());
+  };
+  private onBlur = (): void => this.keys.clear();
 
   dispose(): void {
     this.el.removeEventListener('pointerdown', this.onDown);
+    this.el.removeEventListener('wheel', this.onWheel);
+    this.el.removeEventListener('contextmenu', this.onContext);
     removeEventListener('pointermove', this.onMove);
     removeEventListener('pointerup', this.onUp);
+    removeEventListener('pointercancel', this.onUp);
     removeEventListener('keydown', this.onKeyDown);
+    removeEventListener('keyup', this.onKeyUp);
+    removeEventListener('blur', this.onBlur);
+    if (this.touchLong) clearTimeout(this.touchLong);
     this.box.remove();
   }
+
+  /** 這次觸控期間曾經有兩指以上（結束時不算點擊） */
+  private multiTouch = false;
 
   // ───────────── 拾取 ─────────────
 
@@ -320,6 +337,8 @@ export class Controls {
         if (this.touchLong) clearTimeout(this.touchLong);
         this.touchLine = null;
         this.preview = null;
+        this.dragDeploy = null;
+        this.multiTouch = true;
         this.pinch = this.pinchState();
       }
       return;
@@ -437,8 +456,15 @@ export class Controls {
         return;
       }
       this.pinch = null;
+      const wasMulti = this.multiTouch;
+      this.multiTouch = false;
       if (this.dragDeploy) {
         this.dragDeploy = null;
+        return;
+      }
+      if (wasMulti) {
+        this.touchLine = null;
+        this.preview = null;
         return;
       }
       if (this.touchLine && this.preview) {
@@ -530,7 +556,7 @@ export class Controls {
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
     const k = e.key.toLowerCase();
     if (this.hooks.onKey?.(k, e)) return;
-    this.keys.add(k);
+    if (!e.metaKey && !e.ctrlKey) this.keys.add(k);
     const w = this.world;
     const ids = this.mine();
     if (k === ' ') {

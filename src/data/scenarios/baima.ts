@@ -8,7 +8,7 @@ export const BAIMA: Scenario = {
   title: '白馬之圍',
   subtitle: '教學・關羽斬顏良',
   year: '建安五年（200 年）',
-  image: 'battle/battle_custom.jpg',
+  image: 'battle/battle_baima.jpg',
   intro: [
     '袁紹遣大將顏良圍攻白馬，曹操親率輕騎救援。',
     '此時關羽暫歸曹營，望見顏良麾蓋，策馬直入萬眾之中，刺顏良於馬下。',
@@ -75,7 +75,7 @@ export const BAIMA: Scenario = {
   ],
   stars: [
     { text: '擊潰袁軍', check: (w) => w.winner === 0 },
-    { text: '關羽斬顏良', check: (w) => w.regs.some((r) => r.general?.id === 'yanliang' && !r.general.alive) },
+    { text: '關羽斬顏良', check: (w) => w.regs.some((r) => r.general?.id === 'yanliang' && !r.general.alive && !r.general.fled) },
     { text: '燒掉袁軍糧倉', check: (w) => w.teams[1].depotsBurnt > 0 },
   ],
   advisor: { name: '荀攸', portrait: 'hero/hero_xunyou.jpg' },
