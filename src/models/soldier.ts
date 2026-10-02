@@ -16,7 +16,8 @@ export type ModelKey =
   | 'gen_spear'
   | 'gen_ji'
   | 'gen_sword'
-  | 'gen_fan';
+  | 'gen_fan'
+  | 'packhorse';
 
 export interface ModelDef {
   key: ModelKey;
@@ -297,7 +298,7 @@ function horse(mb: ModelBuilder, coat: string, o: { barding?: boolean; caparison
 interface Recipe {
   weapon: WeaponKind;
   mounted: boolean;
-  human: HumanOpts;
+  human: HumanOpts | null;
   off?: 'shield' | 'bow' | 'smallshield';
   horse?: { coat: string; barding?: boolean; caparison?: boolean; gold?: boolean };
 }
@@ -316,6 +317,8 @@ const RECIPES: Record<ModelKey, Recipe> = {
   gen_ji: { weapon: 'ji', mounted: true, human: { armor: 'general', helmet: 'general', cape: true, beard: true }, horse: { coat: '#2a2220', barding: true, gold: true } },
   gen_sword: { weapon: 'sword', mounted: true, human: { armor: 'general', helmet: 'general', cape: true, beard: true }, off: 'smallshield', horse: { coat: '#3b2a20', barding: true, gold: true } },
   gen_fan: { weapon: 'fan', mounted: true, human: { armor: 'light', helmet: 'guan', cape: true, beard: true }, horse: { coat: '#d9d2c4', caparison: true } },
+  // 拖輜重車的馬（無騎手）
+  packhorse: { weapon: 'none', mounted: true, human: null, horse: { coat: '#7a5a3a' } },
 };
 
 export const MODEL_KEYS = Object.keys(RECIPES) as ModelKey[];
@@ -327,8 +330,15 @@ export function buildModel(key: ModelKey): ModelDef {
     horse(mb, r.horse!.coat, r.horse!);
     mb.offset.set(RIDER_OFFSET.x, RIDER_OFFSET.y, RIDER_OFFSET.z);
   }
-  human(mb, r.human);
-  weapon(mb, r.weapon);
+  if (r.human) {
+    human(mb, r.human);
+    weapon(mb, r.weapon);
+  } else {
+    // 挽具：胸帶與車轅接頭
+    mb.offset.set(0, 0, 0);
+    mb.add(box(0.7, 0.12, 0.12), COL.leather, B.hBody, T(0, 1.35, 0.72));
+    mb.add(box(0.5, 0.5, 0.1), COL.leather, B.hBody, T(0, 1.5, -0.05));
+  }
   if (r.off) offhand(mb, r.off);
   return { key, weapon: r.weapon, mounted: r.mounted, rig: makeRig(r.mounted), geometry: mb.build() };
 }

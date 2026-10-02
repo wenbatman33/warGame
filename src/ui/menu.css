@@ -1,0 +1,93 @@
+/* 主選單、戰役地圖、簡報、設定：CoC 式厚實按鈕與面板 */
+.scr { position: fixed; inset: 0; z-index: 30; font-family: 'Noto Sans TC', sans-serif; color: #fff; overflow: hidden; }
+.scr .bg { position: absolute; inset: -2%; background: #111 center/cover no-repeat; animation: kenburns 40s ease-in-out infinite alternate; }
+@keyframes kenburns { from { transform: scale(1.02); } to { transform: scale(1.1) translate(-1%, -1%); } }
+.scr .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.7)); }
+.menu-c { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.logo { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.logo img { width: 110px; height: 110px; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.7)); }
+.logo .t { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 84px; line-height: 1; color: #ffd35e; letter-spacing: 6px; background: linear-gradient(#fff3b0, #f2b830 55%, #b7741a); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 3px 0 #3a1a00) drop-shadow(0 0 2px #000) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6)); }
+.logo .s { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 20px; letter-spacing: 8px; color: #fff; text-align: center; margin-top: 6px; text-shadow: 0 2px 0 #000; }
+.mbtn { pointer-events: auto; cursor: pointer; min-width: 260px; text-align: center; font-weight: 900; font-size: 22px; padding: 10px 26px; border-radius: 16px; border: 3px solid #000; color: #fff; background: linear-gradient(#8ee65a, #4aa824); box-shadow: 0 5px 0 #000, inset 0 3px 0 rgba(255, 255, 255, 0.35); -webkit-text-stroke: 3px #000; paint-order: stroke fill; user-select: none; transition: transform 0.08s; }
+.mbtn:hover { transform: translateY(-2px) scale(1.02); }
+.mbtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
+.mbtn.gold { background: linear-gradient(#ffe07a, #e0a020); }
+.mbtn.blue { background: linear-gradient(#6fb8ff, #2f74d8); }
+.mbtn.gray { background: linear-gradient(#8a8278, #56504a); }
+.mbtn.red { background: linear-gradient(#f2735c, #b8361f); }
+.mbtn.sm { min-width: 0; font-size: 16px; padding: 7px 16px; border-radius: 12px; }
+.ver { position: absolute; right: 12px; bottom: 8px; font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+
+/* 戰役地圖 */
+.camp-top { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 2; }
+.camp-title { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 30px; color: #ffd35e; -webkit-text-stroke: 4px #000; paint-order: stroke fill; }
+.camp-stars { font-weight: 900; font-size: 18px; background: rgba(0, 0, 0, 0.6); border: 2px solid #000; border-radius: 12px; padding: 4px 12px; }
+.mapwrap { position: absolute; inset: 0; display: grid; place-items: center; }
+.mapbox { position: relative; width: min(100vw, 150vh); aspect-ratio: 3 / 2; }
+.mapbox img.map { width: 100%; height: 100%; object-fit: cover; display: block; }
+.node { position: absolute; transform: translate(-50%, -50%); cursor: pointer; display: flex; flex-direction: column; align-items: center; pointer-events: auto; }
+.node .pin { width: 64px; height: 64px; border-radius: 50%; border: 4px solid #ffd35e; box-shadow: 0 4px 0 #000, 0 0 0 3px #000, 0 0 18px rgba(255, 210, 90, 0.8); background: #333 center/cover; animation: bob 2.4s ease-in-out infinite; }
+.node:hover .pin { transform: scale(1.1); }
+.node .nm { margin-top: 4px; font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 18px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; white-space: nowrap; }
+.node .yr { font-size: 11px; font-weight: 700; color: #ffe9a8; text-shadow: 0 1px 2px #000; }
+.node .st { font-size: 16px; letter-spacing: 1px; text-shadow: 0 1px 2px #000; }
+.node.done .pin { border-color: #9cff7a; }
+@keyframes bob { 50% { transform: translateY(-5px); } }
+.camp-bottom { position: absolute; left: 0; right: 0; bottom: 12px; display: flex; justify-content: center; gap: 12px; z-index: 2; }
+
+/* 簡報 */
+.brief { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); }
+.brief .bcard { width: min(980px, 96vw); max-height: 94vh; overflow: auto; display: grid; grid-template-columns: 1.1fr 1fr; background: linear-gradient(#3b2d1f, #241a10); border: 4px solid #000; border-radius: 18px; box-shadow: 0 8px 0 #000, inset 0 0 0 3px #b8862b; }
+.brief .pic { background: #000 center/cover; min-height: 320px; border-radius: 14px 0 0 14px; position: relative; }
+.brief .pic .ttl { position: absolute; left: 14px; bottom: 12px; font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 40px; color: #ffd35e; -webkit-text-stroke: 5px #000; paint-order: stroke fill; line-height: 1.05; }
+.brief .pic .ttl small { display: block; font-size: 20px; color: #fff; }
+.brief .txt { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.6; color: #f3e6cc; }
+.brief .txt h4 { margin: 4px 0 0; font-size: 15px; color: #ffd35e; }
+.brief .txt p { margin: 0; }
+.brief .txt ul { margin: 0; padding-left: 20px; }
+.brief .tip { background: rgba(255, 211, 94, 0.12); border: 1px solid rgba(255, 211, 94, 0.4); border-radius: 8px; padding: 6px 10px; }
+.brief .diff { display: flex; gap: 6px; }
+.brief .diff .mbtn { flex: 1; min-width: 0; }
+.brief .diff .mbtn.off { filter: grayscale(0.8) brightness(0.65); }
+.brief .acts { display: flex; gap: 10px; margin-top: 6px; }
+.brief .acts .mbtn { flex: 1; min-width: 0; }
+@media (max-width: 760px) {
+  .brief .bcard { grid-template-columns: 1fr; }
+  .brief .pic { min-height: 160px; border-radius: 14px 14px 0 0; }
+  .logo .t { font-size: 54px; }
+  .logo img { width: 70px; height: 70px; }
+  .mbtn { min-width: 200px; font-size: 18px; }
+  .node .pin { width: 44px; height: 44px; }
+  .node .nm { font-size: 14px; }
+}
+
+/* 對話框 */
+.modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(0, 0, 0, 0.6); font-family: 'Noto Sans TC', sans-serif; }
+.modal .box { width: min(640px, 94vw); max-height: 90vh; overflow: auto; background: linear-gradient(#3b2d1f, #241a10); border: 4px solid #000; border-radius: 18px; box-shadow: 0 8px 0 #000, inset 0 0 0 3px #b8862b; padding: 16px 20px; color: #f3e6cc; }
+.modal h3 { margin: 0 0 10px; font-family: 'Noto Serif TC', serif; font-size: 26px; color: #ffd35e; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+.modal table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.modal td { padding: 4px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); vertical-align: top; }
+.modal td:first-child { color: #ffd35e; font-weight: 700; white-space: nowrap; }
+.modal .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 15px; }
+.modal .row label { width: 90px; }
+.modal .row input[type='range'] { flex: 1; }
+.modal .seg { display: flex; gap: 6px; flex: 1; }
+.modal .seg .mbtn { flex: 1; min-width: 0; }
+.modal .seg .mbtn.off { filter: grayscale(0.8) brightness(0.65); }
+.modal .close { margin-top: 12px; text-align: center; }
+
+/* 讀取 */
+.loading { position: fixed; inset: 0; z-index: 90; background: #000 center/cover; display: grid; place-items: end center; }
+.loading .lt { margin-bottom: 8vh; text-align: center; }
+.loading .lt b { display: block; font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 44px; color: #ffd35e; -webkit-text-stroke: 5px #000; paint-order: stroke fill; }
+.loading .lt span { font-weight: 900; font-size: 18px; color: #fff; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+.loading .pb { width: min(420px, 80vw); height: 14px; margin: 10px auto 0; border: 3px solid #000; border-radius: 10px; background: #222; overflow: hidden; }
+.loading .pb i { display: block; height: 100%; width: 10%; background: linear-gradient(#ffe07a, #e0a020); animation: load 1.2s ease-in-out infinite alternate; }
+@keyframes load { to { width: 95%; } }
+
+/* 軍師提示 */
+.advisor { position: absolute; left: 10px; top: 92px; width: min(330px, 46vw); display: flex; gap: 8px; align-items: flex-start; pointer-events: auto; animation: toastIn 0.35s ease-out; }
+.advisor .face { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; border: 3px solid #ffd35e; box-shadow: 0 2px 0 #000; background: #333 center/cover; }
+.advisor .say { background: rgba(250, 240, 215, 0.95); color: #2a1a08; border: 2px solid #000; border-radius: 10px; padding: 6px 10px 7px; font-size: 13px; font-weight: 700; line-height: 1.5; box-shadow: 0 3px 0 #000; position: relative; }
+.advisor .say b { color: #8a3a00; }
+.advisor .x { position: absolute; right: 4px; top: 0; cursor: pointer; font-size: 14px; color: #8a6a4a; }

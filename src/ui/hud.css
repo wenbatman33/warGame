@@ -117,7 +117,7 @@
 /* 部署面板 */
 .deploy { position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%); text-align: center; pointer-events: none; }
 .deploy .hint { background: var(--panel); border: 2px solid #000; border-radius: 10px; padding: 5px 12px; font-size: 13px; color: #fff; font-weight: 700; margin-bottom: 8px; }
-.deploy .go { pointer-events: auto; font-size: 24px; padding: 8px 34px; border-radius: 14px; }
+.deploy .go { pointer-events: auto; display: inline-block; font-size: 24px; padding: 8px 34px; border-radius: 14px; }
 
 /* 中央事件橫幅 */
 .toasts { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -165,3 +165,11 @@ body.picking canvas { cursor: crosshair; }
   .toast { font-size: 19px; }
   .toast.gold { font-size: 23px; }
 }
+
+/* 營寨／糧倉名牌 */
+.sbadge { position: absolute; left: 0; top: 0; width: 100px; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: auto; cursor: pointer; will-change: transform; }
+.sbadge .nm { font-size: 12px; font-weight: 900; color: #fff; white-space: nowrap; }
+.sbadge.enemy .nm { color: #ffd0c0; }
+.sbadge .bar { width: 64px; height: 6px; background: #000; border: 1.5px solid #000; border-radius: 4px; overflow: hidden; display: block; }
+.sbadge .bar i { display: block; height: 100%; }
+.sbadge.burnt { opacity: 0.6; }

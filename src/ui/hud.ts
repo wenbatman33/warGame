@@ -10,6 +10,7 @@ import type { Battle } from '../game/battle';
 import { terrainBase, terrainView } from '../render/terrain';
 import type { Regiment } from '../sim/regiment';
 import type { GameEvent } from '../sim/world';
+import { SETTINGS } from '../game/settings';
 import { applyLayout, LAYOUT } from './layout';
 import { Minimap } from './minimap';
 
@@ -297,9 +298,44 @@ export class Hud {
     }
   }
 
+  private structBadges = new Map<number, HTMLDivElement>();
+  private updateStructBadges(): void {
+    const w = this.b.world;
+    const ctl = this.b.controls;
+    for (const st of w.structs) {
+      let e = this.structBadges.get(st.id);
+      if (!e) {
+        e = el('div', 'sbadge');
+        e.innerHTML = `<span class="nm stroke"></span><span class="bar"><i></i></span>`;
+        e.onpointerdown = (ev) => {
+          ev.stopPropagation();
+          if (st.team !== w.player && ctl.selected.size && st.kind !== 'water') ctl.orderAt(st.x, st.z, false);
+        };
+        this.badgeLayer.appendChild(e);
+        this.structBadges.set(st.id, e);
+      }
+      const p = ctl.screenOf(st.x, w.hf.height(st.x, st.z) + (st.kind === 'hq' ? 16 : 12), st.z);
+      if (!p.vis || p.x < -60 || p.y < -40 || p.x > innerWidth + 60 || p.y > innerHeight + 40) {
+        e.style.display = 'none';
+        continue;
+      }
+      e.style.display = '';
+      e.style.transform = `translate(${(p.x - 50).toFixed(1)}px, ${(p.y - 12).toFixed(1)}px)`;
+      const icon = st.kind === 'hq' ? '🏯' : st.kind === 'water' ? '💧' : st.kind === 'camp' ? '⛺' : '🌾';
+      const state = st.burnt ? '（焚毀）' : st.fire > 0 ? ' 🔥' : '';
+      (e.firstChild as HTMLElement).textContent = `${icon}${st.name}${state}`;
+      const bar = e.querySelector('i') as HTMLElement;
+      bar.style.width = `${st.frac * 100}%`;
+      bar.style.background = st.fire > 0 ? '#ff7a2a' : w.teams[st.team].color;
+      e.classList.toggle('enemy', st.team !== w.player);
+      e.classList.toggle('burnt', st.burnt);
+    }
+  }
+
   private updateBadges(): void {
     const w = this.b.world;
     const ctl = this.b.controls;
+    this.updateStructBadges();
     const seen = new Set<number>();
     for (const r of w.regs) {
       if (r.gone || r.name === '逃兵' || !w.isVisibleTo(r, w.player)) continue;
@@ -753,6 +789,7 @@ export class Hud {
     this.updateCards();
     this.updateAbilityCd();
     if (this.slowT % 2 === 0) this.minimap.draw();
+    this.updateHints();
     // 地形提示（滑鼠所在點）
     const m = b.controls.mouse;
     if (m.inside && matchMedia('(pointer:fine)').matches) {
@@ -777,6 +814,45 @@ export class Hud {
     }
   }
   private music = 'battle';
+
+  // ───────────── 軍師提示 ─────────────
+  private hintsDone = new Set<number>();
+  private advisorEl: HTMLDivElement | null = null;
+  private advisorT = 0;
+  private updateHints(): void {
+    const b = this.b;
+    const w = b.world;
+    const hints = b.sc.hints;
+    if (!hints || !SETTINGS.tips) return;
+    if (this.advisorEl && performance.now() - this.advisorT > 11000) this.closeAdvisor();
+    if (this.advisorEl) return;
+    const since = b.phase === 'deploy' ? -1 : w.t - ((w.flags.startT as number) ?? 0);
+    for (let k = 0; k < hints.length; k++) {
+      if (this.hintsDone.has(k)) continue;
+      const hnt = hints[k];
+      const ok = hnt.when ? b.phase === 'battle' && hnt.when(w) : hnt.at !== undefined && (hnt.at < 0 ? b.phase === 'deploy' : since >= hnt.at && b.phase === 'battle');
+      if (!ok) continue;
+      this.hintsDone.add(k);
+      this.showAdvisor(hnt.text);
+      return;
+    }
+  }
+
+  private showAdvisor(text: string): void {
+    const adv = this.b.sc.advisor;
+    const e = el('div', 'advisor');
+    e.innerHTML = `<div class="face" style="background-image:url(${asset(adv?.portrait ?? 'ui/emblem.png')})"></div><div class="say"><span class="x">✕</span><b>${adv?.name ?? '軍師'}：</b>${text}</div>`;
+    (e.querySelector('.x') as HTMLElement).onclick = () => this.closeAdvisor();
+    this.root.appendChild(e);
+    this.advisorEl = e;
+    this.advisorT = performance.now();
+    audio.play('ui_card');
+  }
+
+  private closeAdvisor(): void {
+    this.advisorEl?.remove();
+    this.advisorEl = null;
+  }
 }
 
 export { LAYOUT };

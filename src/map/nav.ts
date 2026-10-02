@@ -79,6 +79,27 @@ export class NavGrid {
       }
   }
 
+  /** 柵欄圈：半徑 r 的一圈不可走，gate 方向（弧度，0＝+Z）留營門 */
+  blockRing(x: number, z: number, r: number, gate: number, gapHalf: number): void {
+    const i0 = this.ix(x - r - 4);
+    const i1 = this.ix(x + r + 4);
+    const j0 = this.iz(z - r - 4);
+    const j1 = this.iz(z + r + 4);
+    const gapA = Math.asin(Math.min(0.99, (gapHalf + 2.5) / r));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const dx = this.cx(i) - x;
+        const dz = this.cz(j) - z;
+        const d = Math.hypot(dx, dz);
+        if (Math.abs(d - r) > 1.9) continue;
+        let a = Math.atan2(dx, dz) - gate;
+        while (a > Math.PI) a -= Math.PI * 2;
+        while (a < -Math.PI) a += Math.PI * 2;
+        if (Math.abs(a) < gapA) continue;
+        this.cost[j * this.n + i] = Infinity;
+      }
+  }
+
   /** 橋：沿橋身打通河面（angle：橋身方向，弧度，0＝沿 Z 軸） */
   openBridge(x: number, z: number, angle: number, length: number): void {
     const steps = Math.ceil(length / 2);

@@ -62,6 +62,13 @@ export interface TriggerSpec {
   run: (w: World) => void;
 }
 
+export interface HintSpec {
+  /** 開戰後秒數（負數＝部署階段就顯示） */
+  at?: number;
+  when?: (w: World) => boolean;
+  text: string;
+}
+
 export interface Scenario {
   id: string;
   title: string;
@@ -77,6 +84,10 @@ export interface Scenario {
   teams: [TeamSpec, TeamSpec];
   stars: [StarSpec, StarSpec, StarSpec];
   triggers?: TriggerSpec[];
+  /** 軍師提示 */
+  hints?: HintSpec[];
+  /** 軍師（提示頭像） */
+  advisor?: { name: string; portrait: string };
   /** 堅守到時間（秒）即勝利 */
   holdTime?: number;
   camera?: { x: number; z: number; dist?: number; yaw?: number };

@@ -22,6 +22,8 @@ export class Structure {
   wagonT = 0;
   /** 佔領進度（本陣） */
   capture = 0;
+  /** 營門朝向（弧度，0＝+Z） */
+  gate = 0;
 
   constructor(id: number, kind: StructKind, team: number, x: number, z: number, stock: number, main: boolean, name: string) {
     this.id = id;

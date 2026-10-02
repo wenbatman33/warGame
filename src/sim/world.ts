@@ -131,6 +131,16 @@ export class World {
       }
       for (const rs of ts.regiments) this.spawnRegiment(ti, rs);
     });
+    // 營門朝向：本陣朝戰場中央、糧倉與營寨朝自家本陣；柵欄圈阻擋通行
+    for (const st of this.structs) {
+      const hq = this.teams[st.team].hq;
+      const [tx, tz] = st.kind === 'hq' || !hq ? [0, 0] : [hq.x, hq.z];
+      st.gate = Math.atan2(tx - st.x, tz - st.z);
+      if (st.kind === 'water') continue;
+      const palR = st.kind === 'hq' ? 21.6 : st.kind === 'camp' ? 10.6 : st.radius - 1.4;
+      const gap = st.kind === 'hq' ? 3.25 : st.kind === 'camp' ? 2.6 : st.main ? 3.6 : 3.0;
+      this.nav.blockRing(st.x, st.z, palR, st.gate, gap);
+    }
     for (const team of this.teams) team.initialStrength = this.regs.filter((r) => r.team === team.index).reduce((a, r) => a + r.alive, 0);
     const hs: number[] = [];
     for (let z = -hf.play / 2; z < hf.play / 2; z += 16) for (let x = -hf.play / 2; x < hf.play / 2; x += 16) hs.push(hf.height(x, z));

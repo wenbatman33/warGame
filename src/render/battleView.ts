@@ -35,6 +35,7 @@ export class BattleView {
   private wagonGeo: THREE.BufferGeometry[] = [];
   private teamColors: THREE.Color[];
   private sunDir = new THREE.Vector3();
+  private fireLights: THREE.PointLight[] = [];
   /** 渲染用遊戲時間（含插值） */
   rt = 0;
 
@@ -45,6 +46,14 @@ export class BattleView {
   ) {
     this.stage = new Stage(container, quality);
     const sc = world.sc;
+    this.stage.setTimeOfDay(sc.time ?? 'day');
+    // 火光：最多 4 盞點光源跟著燃燒中的營寨
+    for (let k = 0; k < 4; k++) {
+      // 永遠開著（只調亮度），避免光源數量變動造成 shader 重編
+      const l = new THREE.PointLight('#ff8a3a', 0, 90, 1.6);
+      this.fireLights.push(l);
+      this.stage.scene.add(l);
+    }
     const hf = world.hf;
     this.stage.scene.add(buildTerrainMesh(hf, sc.map.seed));
     this.stage.scene.add(buildWater(hf, heightTexture(hf), this.sunDir));
@@ -84,7 +93,7 @@ export class BattleView {
               ? buildWaterSource({ team: f.color, seed: st.id })
               : buildDepot({ team: f.color, flagText: f.flag, main: st.main, seed: st.id });
       vis.group.position.set(st.x, hf.height(st.x, st.z), st.z);
-      vis.group.rotation.y = st.team === 0 ? Math.PI : 0;
+      vis.group.rotation.y = st.gate;
       vis.group.updateMatrixWorld(true);
       vis.setHeight?.((x, z) => hf.height(x, z));
       vis.group.traverse((o) => {
@@ -150,22 +159,6 @@ export class BattleView {
       const yaw = s.pyaw[i] + dy * alpha;
       sr.push(w.modelOf(i), x, w.groundY(x, z), z, yaw, ANIM_ORDER[s.anim[i]], s.animStart[i], s.animSpeed[i], this.teamColors[s.team[i]], s.tint[i]);
     }
-    sr.end();
-    this.arrows.update(w.proj, this.rt);
-
-    // 營寨
-    for (const sv of this.structs) {
-      const st = sv.st;
-      if (Math.abs(st.frac - sv.lastFrac) > 0.01) {
-        sv.vis.setStock(st.frac);
-        sv.lastFrac = st.frac;
-      }
-      if (st.burnt && !sv.burntShown) {
-        sv.vis.setBurnt(true);
-        sv.burntShown = true;
-      }
-      if (!paused && (st.fire > 0 || st.burnt)) this.fireFx(sv, dt);
-    }
     // 輜重車
     for (const wg of w.wagons) {
       let m = this.wagonMeshes.get(wg.id);
@@ -188,6 +181,45 @@ export class BattleView {
       m.position.set(x, w.groundY(x, z), z);
       m.rotation.y = wg.yaw;
       m.visible = wg.team === w.player || this.nearPlayer(x, z);
+      if (m.visible) {
+        // 兩匹拖車馬（輜重車沿 +Z 前進，車轅在前方）
+        const fx = Math.sin(wg.yaw);
+        const fz = Math.cos(wg.yaw);
+        for (const side of [-0.55, 0.55]) {
+          const hx = x + fx * 3.6 + fz * side;
+          const hz = z + fz * 3.6 - fx * side;
+          this.soldiers.push('packhorse', hx, w.groundY(hx, hz), hz, wg.yaw, 'walk', wg.id * 0.37 + side, 0.9, this.teamColors[wg.team], 0.5);
+        }
+      }
+    }
+    sr.end();
+    this.arrows.update(w.proj, this.rt);
+
+    // 火光
+    const burning = this.structs.filter((sv) => sv.st.fire > 0.05).sort((a, b) => b.st.fire - a.st.fire);
+    const night = this.world.sc.time === 'night' ? 2.2 : this.world.sc.time === 'dusk' ? 1.4 : 1;
+    this.fireLights.forEach((l, k) => {
+      const sv = burning[k];
+      if (!sv) {
+        l.intensity = 0;
+        return;
+      }
+      const f = sv.st.burnt ? 0.35 : sv.st.fire;
+      l.position.set(sv.st.x, this.world.hf.height(sv.st.x, sv.st.z) + 8, sv.st.z);
+      l.intensity = (900 + Math.random() * 300) * f * night;
+    });
+    // 營寨
+    for (const sv of this.structs) {
+      const st = sv.st;
+      if (Math.abs(st.frac - sv.lastFrac) > 0.01) {
+        sv.vis.setStock(st.frac);
+        sv.lastFrac = st.frac;
+      }
+      if (st.burnt && !sv.burntShown) {
+        sv.vis.setBurnt(true);
+        sv.burntShown = true;
+      }
+      if (!paused && (st.fire > 0 || st.burnt)) this.fireFx(sv, dt);
     }
     if (!paused) this.particles.update(dt);
   }

@@ -170,6 +170,16 @@ export const GUANDU: Scenario = {
       },
     },
   ],
+  advisor: { name: '荀攸', portrait: 'hero/hero_xunyou.jpg' },
+  hints: [
+    { at: -1, text: '主公，<b>右鍵按住拖曳</b>可以拉出戰線。把步兵沿<b>河岸南側</b>排開——袁軍渡河時「半渡而擊」，受傷 +25%！按右上「🗺 地形」看淺灘在哪。' },
+    { at: 6, text: '東邊淺灘外有一片<b>密林</b>，可以掩護騎兵。派<b>輕騎與許褚</b>往東、再往北，直撲<b>烏巢</b>！（右鍵點糧倉＝縱火）' },
+    { when: (w) => w.regs.some((r) => r.team === 1 && !r.gone && r.terrain.wet), text: '袁軍正在<b>涉水</b>！趁他們半渡，弓弩齊射、步兵壓上！' },
+    { when: (w) => w.structs.some((s) => s.name === '烏巢' && s.fire > 0 && !s.burnt), text: '烏巢起火了！<b>守住火場</b>，別讓袁軍回來救火。' },
+    { when: (w) => w.regs.some((r) => r.team === 0 && r.state === 'routing'), text: '有部隊潰逃了。讓<b>曹操</b>靠近重整、或用計策「<b>擂鼓助威</b>」穩住軍心。' },
+    { when: (w) => w.structs.some((s) => s.team === 0 && s.attackedT > 0 && w.t - s.attackedT < 3), text: '袁軍在<b>劫我糧道</b>！快派兵回防，糧倉一燒我軍也會軍心大亂。' },
+    { when: (w) => w.teams[1].panicUntil > w.t, text: '袁軍<b>軍心大亂</b>！全線壓上，一鼓作氣！' },
+  ],
   labels: [
     { x: 218, z: -208, text: '烏巢' },
     { x: 0, z: 215, text: '官渡' },

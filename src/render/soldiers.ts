@@ -88,9 +88,10 @@ export class SoldierRenderer {
     for (const key of MODEL_KEYS) {
       const baked = bakeModel(buildModel(key));
       const mats = makeMaterial(baked);
-      const cap = caps[key] ?? (key.startsWith('gen_') ? 16 : 2400);
+      const small = key.startsWith('gen_') || key === 'packhorse';
+      const cap = caps[key] ?? (small ? 48 : 2400);
       const live = makeLayer(baked, cap, mats, true);
-      const dead = makeLayer(baked, key.startsWith('gen_') ? 16 : deadCap, mats, false);
+      const dead = makeLayer(baked, small ? 16 : deadCap, mats, false);
       this.group.add(live.mesh, dead.mesh);
       this.sets.set(key, { baked, live, dead, deadNext: 0, deadFilled: 0 });
     }

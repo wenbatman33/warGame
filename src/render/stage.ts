@@ -17,6 +17,41 @@ export const LIGHT = {
   fogFar: 1100,
 };
 
+export type TimeOfDay = 'day' | 'dusk' | 'night';
+
+/** 天色預設：白天（CoC 式晴朗）／黃昏（官渡）／夜晚（夜襲） */
+export const TIME_PRESETS: Record<TimeOfDay, Partial<typeof LIGHT> & { sky: [string, string, string] }> = {
+  day: { sky: ['#5ea8e8', '#a9d4f5', '#e6f2f6'] },
+  dusk: {
+    sunColor: '#ffb27a',
+    sunIntensity: 2.4,
+    sunAzimuth: 250,
+    sunElevation: 20,
+    skyColor: '#f2c49a',
+    groundColor: '#5a5a34',
+    hemiIntensity: 1.05,
+    exposure: 1.02,
+    fogColor: '#e6b48e',
+    fogNear: 320,
+    fogFar: 1000,
+    sky: ['#4b5d9a', '#e39a72', '#f6d2a0'],
+  },
+  night: {
+    sunColor: '#a9bcff',
+    sunIntensity: 1.1,
+    sunAzimuth: 200,
+    sunElevation: 38,
+    skyColor: '#3a4d7a',
+    groundColor: '#1a2018',
+    hemiIntensity: 0.75,
+    exposure: 1.15,
+    fogColor: '#1a2440',
+    fogNear: 220,
+    fogFar: 820,
+    sky: ['#070c1e', '#18264a', '#2a3a5e'],
+  },
+};
+
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -55,7 +90,7 @@ export class Stage {
     this.scene.add(this.hemi);
 
     this.scene.fog = new THREE.Fog(LIGHT.fogColor, LIGHT.fogNear, LIGHT.fogFar);
-    this.scene.background = makeSkyTexture();
+    this.scene.background = makeSkyTexture(TIME_PRESETS.day.sky);
 
     window.addEventListener('resize', () => this.resize());
   }
@@ -66,6 +101,14 @@ export class Stage {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+  }
+
+  /** 套用天色預設 */
+  setTimeOfDay(t: TimeOfDay): void {
+    const { sky, ...rest } = TIME_PRESETS[t];
+    Object.assign(LIGHT, DAY_LIGHT, rest);
+    this.scene.background = makeSkyTexture(sky);
+    this.applyLight();
   }
 
   /** 套用 LIGHT 參數（DEV 工具調整後呼叫） */
@@ -112,16 +155,18 @@ export class Stage {
   }
 }
 
-/** 天空：上深下淺的漸層（CoC 式明亮晴空） */
-function makeSkyTexture(): THREE.Texture {
+const DAY_LIGHT = { ...LIGHT };
+
+/** 天空：上深下淺的漸層 */
+function makeSkyTexture(stops: [string, string, string]): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 4;
   c.height = 256;
   const g = c.getContext('2d')!;
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#5ea8e8');
-  grad.addColorStop(0.55, '#a9d4f5');
-  grad.addColorStop(1, '#e6f2f6');
+  grad.addColorStop(0, stops[0]);
+  grad.addColorStop(0.55, stops[1]);
+  grad.addColorStop(1, stops[2]);
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 256);
   const tex = new THREE.CanvasTexture(c);
