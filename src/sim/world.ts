@@ -765,8 +765,11 @@ export class World {
           tz = r.cz + Math.cos(r.facing) * (r.depth(n) / 2 * 0.2);
         } else {
           r.slotWorld(Math.min(s.slot[i], n - 1), n, _slot);
-          tx = _slot[0];
-          tz = _slot[1];
+          // 站位微偏移（±0.18 m），陣形不再像棋盤一樣死板
+          const jx = (s.tint[i] - 0.5) * 0.36;
+          const jz = (((s.tint[i] * 13.7) % 1) - 0.5) * 0.36;
+          tx = _slot[0] + jx;
+          tz = _slot[1] + jz;
         }
         // 陣位落在河裡、懸崖等不可走處：往軍團中心收攏（過淺灘、橋時自動變縱隊）
         if (!this.nav.passable(tx, tz)) {
@@ -1526,8 +1529,10 @@ export class World {
         }
       } else if (friends > 0 && enemies === 0) {
         st.ignite = Math.max(0, st.ignite - dt / 8);
-        // 守軍救火：45 人以上能壓過火勢（每秒最多 −0.09，火勢成長 +0.05）
-        st.fire = Math.max(0, st.fire - dt * 0.03 * Math.min(3, friends / 15));
+        // 守軍救火：45 人以上能壓過火勢（每秒最多 −0.09，火勢成長 +0.05）；起風時救火效率減半、大火（>0.7）難以撲滅
+        const windMul = this.sc.wind ? 0.5 : 1;
+        const bigMul = st.fire > 0.7 ? 0.4 : 1;
+        st.fire = Math.max(0, st.fire - dt * 0.03 * Math.min(3, friends / 15) * windMul * bigMul);
       }
       // 營寨火勢延燒：燃燒中的營寨點燃附近營寨（順風更快）
       if (st.kind === 'camp' && st.fire === 0) {

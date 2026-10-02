@@ -135,8 +135,10 @@ export const CHIBI: Scenario = {
     const camps = w.structs.filter((s) => s.kind === 'camp').sort((a, b) => b.z - a.z);
     for (const c of camps.slice(0, 2)) {
       c.ignite = 1;
-      c.fire = 0.45;
+      c.fire = 0.9;
       w.events.push({ k: 'ignite', s: c.id });
+      // 營中守軍被大火驚潰
+      for (const r of w.regs) if (r.team === 1 && !r.gone && Math.hypot(r.mx - c.x, r.mz - c.z) < 45) w.rout(r);
     }
     w.events.push({ k: 'msg', text: '東風起！黃蓋火船直衝曹營', tone: 'gold' });
   },

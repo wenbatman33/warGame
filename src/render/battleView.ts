@@ -51,9 +51,10 @@ export class BattleView {
     const st = this.stage;
     this.perfLevel++;
     if (this.perfLevel === 1) {
+      st.setBloom(false);
       st.renderer.setPixelRatio(1);
       st.resize();
-      return '解析度';
+      return '後製與解析度';
     }
     if (this.perfLevel === 2) {
       st.scene.traverse((o) => {

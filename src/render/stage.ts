@@ -1,5 +1,9 @@
 // 渲染舞台：renderer、場景、CoC 式暖色光、天空、霧、陰影跟隨鏡頭
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 export type Quality = 'high' | 'medium' | 'low';
 
@@ -60,6 +64,9 @@ export class Stage {
   readonly hemi: THREE.HemisphereLight;
   quality: Quality;
   private shadowBox = 160;
+  /** 高畫質後製：輕微泛光（火光、水面高光） */
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
 
   constructor(container: HTMLElement, quality: Quality) {
     this.quality = quality;
@@ -93,12 +100,34 @@ export class Stage {
     this.scene.background = makeSkyTexture(TIME_PRESETS.day.sky);
 
     window.addEventListener('resize', this.onResize);
+    if (quality === 'high') this.setBloom(true);
+  }
+
+  setBloom(on: boolean): void {
+    if (!on) {
+      this.composer?.dispose();
+      this.composer = null;
+      this.bloom = null;
+      return;
+    }
+    if (this.composer) return;
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.32, 0.45, 0.88);
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+  }
+
+  get bloomOn(): boolean {
+    return !!this.composer;
   }
 
   private onResize = (): void => this.resize();
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
+    this.setBloom(false);
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }
@@ -109,6 +138,8 @@ export class Stage {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.composer?.setSize(w, h);
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
   }
 
   /** 套用天色預設 */
@@ -159,7 +190,8 @@ export class Stage {
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 }
 

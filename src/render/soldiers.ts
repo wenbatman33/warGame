@@ -185,15 +185,17 @@ export class SoldierRenderer {
 
 function write(L: Layer, i: number, baked: BakedModel, x: number, y: number, z: number, yaw: number, anim: AnimName, start: number, speed: number, team: THREE.Color, tint: number): void {
   const m = L.mesh.instanceMatrix.array as Float32Array;
-  const c = Math.cos(yaw) * SOLDIER_SCALE;
-  const s = Math.sin(yaw) * SOLDIER_SCALE;
+  // 每名士兵身高略有不同（0.94–1.06 倍），大軍看起來更自然
+  const sc = SOLDIER_SCALE * (0.94 + ((tint * 7.31) % 1) * 0.12);
+  const c = Math.cos(yaw) * sc;
+  const s = Math.sin(yaw) * sc;
   const o = i * 16;
   m[o] = c;
   m[o + 1] = 0;
   m[o + 2] = -s;
   m[o + 3] = 0;
   m[o + 4] = 0;
-  m[o + 5] = SOLDIER_SCALE;
+  m[o + 5] = sc;
   m[o + 6] = 0;
   m[o + 7] = 0;
   m[o + 8] = s;
