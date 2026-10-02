@@ -28,7 +28,7 @@ export class AiCommander {
     const w = this.w;
     if (!w.started || w.over) return;
     if (w.t < this.next) return;
-    this.next = w.t + this.react * (0.8 + Math.random() * 0.4);
+    this.next = w.t + this.react * (0.8 + w.rng() * 0.4);
     const mine = w.regs.filter((r) => r.team === this.team && !r.gone && !r.routing && r.name !== '逃兵');
     const enemies = w.regs.filter((r) => r.team !== this.team && !r.gone && r.name !== '逃兵' && w.isVisibleTo(r, this.team));
     const started = w.t - ((w.flags.startT as number) ?? 0) > (this.plan.startDelay ?? 0);
