@@ -78,6 +78,7 @@ export const HULAO: Scenario = {
         { type: 'sword', x: 45, z: 95 },
         { type: 'spear', x: 0, z: 95 },
         { type: 'spear', x: -80, z: 110 },
+        { type: 'spear', x: 80, z: 105 },
         { type: 'archer', x: -30, z: 150 },
         { type: 'archer', x: 30, z: 150 },
         { type: 'heavycav', x: 80, z: 140, name: '聯軍鐵騎' },
@@ -89,7 +90,7 @@ export const HULAO: Scenario = {
       commander: 'dongzhuo',
       hq: { x: 0, z: -222, stock: 420, name: '虎牢關' },
       depots: [{ x: -50, z: -248, stock: 800, name: '關內糧倉' }],
-      ai: { plan: 'attack', aggression: 0.8, raid: false, startDelay: 20 },
+      ai: { plan: 'attack', aggression: 0.7, raid: false, startDelay: 35 },
       regiments: [
         { type: 'guard', x: 0, z: -190, general: 'dongzhuo', role: 'reserve' },
         { type: 'guard', x: 0, z: -70, general: 'lvbu', name: '呂布并州鐵騎', morale: 95 },

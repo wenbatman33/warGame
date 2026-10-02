@@ -25,6 +25,8 @@ export const RULES = {
   flankDrain: 2,
   rearDrain: 4,
   chargeShock: 8,
+  /** 騎兵正面衝擊列陣步兵的傷害倍率 */
+  chargeFrontMul: 0.65,
   outnumberDrain: 1,
   friendRoutShock: 6,
   enemyRoutBoost: 4,

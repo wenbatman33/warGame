@@ -94,14 +94,21 @@ export class World {
 
   /** 難度：各隊攻擊倍率 */
   teamAtk = [1, 1];
+  /** 各隊士氣流失倍率（玩家在簡單／普通難度較堅韌） */
+  teamGrit = [1, 1];
+  /** 各隊潰兵重整等待倍率 */
+  teamRally = [1, 1];
   /** 各隊「後方」方向（單位向量，由戰場中心指向己方本陣） */
   homeDir: [number, number][] = [];
 
   /** 套用難度（敵軍攻擊與士氣） */
   setDifficulty(d: 'easy' | 'normal' | 'hard'): void {
-    const atk = d === 'easy' ? 0.75 : d === 'hard' ? 1.12 : 1;
-    const mor = d === 'easy' ? -12 : d === 'hard' ? 6 : 0;
+    const atk = d === 'easy' ? 0.75 : d === 'hard' ? 1.12 : 0.92;
+    const mor = d === 'easy' ? -12 : d === 'hard' ? 6 : -3;
     for (let t = 0; t < this.teams.length; t++) if (t !== this.player) this.teamAtk[t] = atk;
+    // 玩家是主帥：簡單／普通難度下我軍士氣較不易崩、潰兵較快重整
+    this.teamGrit[this.player] = d === 'easy' ? 0.6 : d === 'hard' ? 1 : 0.75;
+    this.teamRally[this.player] = d === 'easy' ? 0.5 : d === 'hard' ? 1 : 0.65;
     for (const r of this.regs) {
       if (r.team === this.player) continue;
       r.baseMorale = Math.max(30, Math.min(95, r.baseMorale + mor));
@@ -1052,6 +1059,9 @@ export class World {
       const mul = (r.formation === 'wedge' ? 1.3 : 1) * r.buffMul('atk', t) * (speed / r.unit.run) * terrMul;
       let dmg = r.unit.charge * 2.2 * mul * (0.8 + this.rng() * 0.4) * this.teamAtk[r.team];
       if (er.unit.mounted) dmg *= 0.6;
+      // 正面迎擊、未潰逃的步兵陣列：衝擊力被分散（側面、背後衝鋒仍是全力）
+      const frontMul = front && !er.routing && !er.unit.mounted ? RULES.chargeFrontMul : 1;
+      dmg *= frontMul;
       if (s.general[j]) dmg *= 0.4;
       this.damage(j, dmg, i);
       if (s.state[j] === SState.Alive && !s.general[j]) s.stun[j] = 1.0 + this.rng() * 0.6;
@@ -1067,7 +1077,7 @@ export class World {
       r.lastCombatT = er.lastCombatT = t;
       if (t - er.chargeShockT > 4) {
         er.chargeShockT = t;
-        if (!er.hasBuff('steady', t)) er.morale -= RULES.chargeShock * (er.formation === 'square' ? 0.5 : 1);
+        if (!er.hasBuff('steady', t)) er.morale -= RULES.chargeShock * (er.formation === 'square' ? 0.5 : 1) * this.teamGrit[er.team] * (frontMul < 1 ? 0.7 : 1);
         this.events.push({ k: 'charge', reg: er.id, x: s.x[j], z: s.z[j] });
       }
       return;
@@ -1345,6 +1355,7 @@ export class World {
       if (r.terrain.wet && r.engagedWith.size > 0) dm -= RULES.fordMorale * dt;
       if (r.engagedWith.size > 0 && r.terrain.relHeight < -5) dm -= RULES.uphillMorale * dt;
       if (r.terrain.camp && !r.routing) dm += RULES.campMorale * dt;
+      if (dm < 0) dm *= this.teamGrit[r.team];
       if (steady && dm < 0) dm = 0;
       if (r.general?.alive && r.hasBuff('steady', t)) dm = Math.max(0, dm);
       const cap = panic ? Math.min(eff.moraleCap, RULES.panicCap) : eff.moraleCap + (aura > 0 ? 10 : 0);
@@ -1360,9 +1371,9 @@ export class World {
         });
         if (!threatened && !panic) {
           r.calmT += dt;
-          r.morale = Math.min(eff.moraleCap, r.morale + 2.2 * dt * (team.supply === 'starving' ? 0.4 : 1));
+          r.morale = Math.min(eff.moraleCap, r.morale + (2.2 * dt * (team.supply === 'starving' ? 0.4 : 1)) / this.teamRally[r.team]);
         } else r.calmT = 0;
-        if (r.calmT > RULES.rallyDelay && r.morale >= RULES.rallyMorale) this.rally(r);
+        if (r.calmT > RULES.rallyDelay * this.teamRally[r.team] && r.morale >= RULES.rallyMorale) this.rally(r);
       }
     }
   }
@@ -1404,7 +1415,7 @@ export class World {
       const d = Math.hypot(o.mx - r.mx, o.mz - r.mz);
       if (d > 55) continue;
       if (o.team === r.team) {
-        if (!o.hasBuff('steady', this.t)) o.morale -= RULES.friendRoutShock;
+        if (!o.hasBuff('steady', this.t)) o.morale -= RULES.friendRoutShock * this.teamGrit[o.team];
       } else o.morale = Math.min(100, o.morale + RULES.enemyRoutBoost);
     }
   }
@@ -1774,8 +1785,12 @@ export class World {
   private checkEnd(): void {
     if (this.over || !this.started) return;
     for (const team of this.teams) {
-      const standing = this.regs.filter((r) => r.team === team.index && !r.gone && !r.routing && r.alive > 0 && r.name !== '逃兵').reduce((a, r) => a + r.alive, 0);
-      if (standing === 0 || standing < team.initialStrength * RULES.defeatStanding) {
+      const mine = this.regs.filter((r) => r.team === team.index && !r.gone && r.alive > 0 && r.name !== '逃兵');
+      const standing = mine.filter((r) => !r.routing).reduce((a, r) => a + r.alive, 0);
+      // 還能重整的潰兵（未潰散、不在軍心大亂中）也算在兵力內，避免一波潰逃就直接判敗
+      const panic = team.panicUntil > this.t;
+      const recoverable = standing + mine.filter((r) => r.routing && r.state === 'routing' && r.routs < RULES.maxRouts && !panic).reduce((a, r) => a + r.alive, 0);
+      if (standing === 0 || recoverable < team.initialStrength * RULES.defeatStanding) {
         this.finish(1 - team.index);
         return;
       }
