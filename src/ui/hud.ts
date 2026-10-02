@@ -284,7 +284,10 @@ export class Hud {
         this.applyStrat(this.pending.id, r.mx, r.mz, r.id);
         return;
       }
-      if (e.shiftKey || this.b.controls.multiSelect) this.b.controls.toggle(r.id);
+      const w = this.b.world;
+      // Ctrl／Cmd＋點卡片：選取同兵種全部
+      if (e.ctrlKey || e.metaKey) this.b.controls.select(w.regs.filter((x) => x.team === w.player && !x.gone && x.type === r.type).map((x) => x.id), e.shiftKey);
+      else if (e.shiftKey || this.b.controls.multiSelect) this.b.controls.toggle(r.id);
       else this.b.controls.select([r.id]);
     };
     if (!r.general) {
