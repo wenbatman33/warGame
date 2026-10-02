@@ -75,6 +75,7 @@ export class Battle {
       onTargetPick: (x, z) => this.hud.pickTarget(x, z),
       deployMode: () => this.phase === 'deploy',
       onDeployMove: (id, x, z) => this.deployMove(id, x, z),
+      onDeployPlace: (id, x, z, f, wd) => this.deployPlace(id, x, z, f, wd),
       onKey: (k) => this.hud.onKey(k),
     });
     this.hud = new Hud(container, this);
@@ -109,6 +110,40 @@ export class Battle {
       w.s.px[i] = w.s.x[i];
       w.s.pz[i] = w.s.z[i];
     }
+  }
+
+  /** 部署：軍團直接就位（含朝向與陣寬），士兵瞬移到陣位 */
+  deployPlace(id: number, x: number, z: number, facing: number, width?: number): void {
+    const w = this.world;
+    const r = w.regs[id];
+    if (!r || r.team !== w.player) return;
+    const dz = this.sc.teams[w.player].deploy;
+    if (dz) {
+      x = Math.max(dz.x - dz.w / 2, Math.min(dz.x + dz.w / 2, x));
+      z = Math.max(dz.z - dz.d / 2, Math.min(dz.z + dz.d / 2, z));
+    }
+    [x, z] = w.nav.nearestPassable(x, z);
+    r.cx = x;
+    r.cz = z;
+    r.facing = facing;
+    if (width) r.width = Math.max(2, Math.round(width));
+    r.order = { type: 'idle', x, z, facing, target: -1, struct: -1 };
+    const n = r.members.length - (r.general?.alive ? 1 : 0);
+    const slot: [number, number] = [0, 0];
+    for (const i of r.members) {
+      if (w.s.general[i]) {
+        w.s.x[i] = x + Math.sin(facing) * (r.depth(n) / 2 + 1.5);
+        w.s.z[i] = z + Math.cos(facing) * (r.depth(n) / 2 + 1.5);
+      } else {
+        r.slotWorld(w.s.slot[i], n, slot);
+        [w.s.x[i], w.s.z[i]] = w.nav.passable(slot[0], slot[1]) ? slot : [x, z];
+      }
+      w.s.px[i] = w.s.x[i];
+      w.s.pz[i] = w.s.z[i];
+      w.s.yaw[i] = w.s.pyaw[i] = facing;
+    }
+    r.mx = x;
+    r.mz = z;
   }
 
   startBattle(): void {

@@ -25,11 +25,16 @@ export function between(geo: THREE.BufferGeometry, a: THREE.Vector3Like, b: THRE
   return geo;
 }
 
+/** 細節等級：0＝近景（上限 8 段）、1＝遠景（約六成段數、最少 4 段） */
+export const KIT = { lod: 0 };
+const segs = (n: number, min = 3) => (KIT.lod ? Math.max(min, Math.round(n * 0.4)) : Math.min(n, 8));
+const rings = (n: number, min = 2) => (KIT.lod ? Math.max(min, Math.round(n * 0.34)) : Math.min(n, 6));
+
 export const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-export const cyl = (rt: number, rb: number, h: number, seg = 8, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
-export const sphere = (r: number, ws = 8, hs = 6) => new THREE.SphereGeometry(r, ws, hs);
-export const hemi = (r: number, ws = 8, hs = 4) => new THREE.SphereGeometry(r, ws, hs, 0, Math.PI * 2, 0, Math.PI / 2);
-export const cone = (r: number, h: number, seg = 8) => new THREE.ConeGeometry(r, h, seg);
+export const cyl = (rt: number, rb: number, h: number, seg = 8, open = false) => new THREE.CylinderGeometry(rt, rb, h, segs(seg), 1, open);
+export const sphere = (r: number, ws = 8, hs = 6) => new THREE.SphereGeometry(r, segs(ws, 4), rings(hs, 2));
+export const hemi = (r: number, ws = 8, hs = 4) => new THREE.SphereGeometry(r, segs(ws), rings(hs), 0, Math.PI * 2, 0, Math.PI / 2);
+export const cone = (r: number, h: number, seg = 8) => new THREE.ConeGeometry(r, h, segs(seg, 3));
 
 /** 一個模型的建構器：每個頂點帶骨骼編號 aBone、隊伍色遮罩 aMask */
 export class ModelBuilder {

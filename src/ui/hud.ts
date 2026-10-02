@@ -7,6 +7,7 @@ import { RULES, SUPPLY_EFFECTS } from '../data/rules';
 import { STRATAGEM_ORDER, STRATAGEMS, type StratagemId } from '../data/stratagems';
 import { MEN_PER_SOLDIER } from '../data/units';
 import type { Battle } from '../game/battle';
+import { unitIcon } from '../render/icons';
 import { terrainBase, terrainView } from '../render/terrain';
 import type { Regiment } from '../sim/regiment';
 import type { GameEvent } from '../sim/world';
@@ -216,7 +217,8 @@ export class Hud {
 
   private iconOf(r: Regiment): string {
     if (r.general) return `<img src="${asset(`hero/hero_${r.general.id}.jpg`)}" onerror="this.replaceWith('${r.unit.icon}')">`;
-    return r.unit.icon;
+    const url = unitIcon(r.unit.model, FACTIONS[r.faction].color);
+    return url ? `<img src="${url}" alt="">` : r.unit.icon;
   }
 
   private addCard(r: Regiment): void {

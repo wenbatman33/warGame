@@ -1,7 +1,7 @@
 // 士兵、騎兵、武將的程式建模（頭身約 1:6，CoC 式厚實輪廓）
 import * as THREE from 'three';
 import { B, makeRig, RIDER_OFFSET, type Rig, type WeaponKind } from './rig';
-import { between, box, cone, cyl, hemi, ModelBuilder, sphere, T } from './kit';
+import { between, box, cone, cyl, hemi, KIT, ModelBuilder, sphere, T } from './kit';
 
 export type ModelKey =
   | 'sword'
@@ -70,7 +70,7 @@ function human(mb: ModelBuilder, o: HumanOpts): void {
     mb.add(between(cyl(0.075, 0.066, 1, 8), v(x, 0.93, 0), v(x, 0.5, 0)), COL.pants, thigh);
     mb.add(between(cyl(0.064, 0.05, 1, 8), v(x, 0.5, 0), v(x, 0.09, 0)), o.armor === 'light' ? COL.wraps : COL.boots, shin);
     mb.add(box(0.105, 0.085, 0.23), COL.boots, shin, T(x, 0.045, 0.045));
-    if (o.armor === 'heavy' || o.armor === 'general') {
+    if ((o.armor === 'heavy' || o.armor === 'general') && !KIT.lod) {
       // 護脛
       mb.add(box(0.1, 0.22, 0.05), COL.iron, shin, T(x, 0.33, 0.055));
     }
@@ -80,8 +80,10 @@ function human(mb: ModelBuilder, o: HumanOpts): void {
   mb.add(cyl(0.18, 0.255, 0.36, 10), vestCol, B.pelvis, T(0, 0.83, 0, 0, 0, 0, 1, 1, 0.74), armorTint);
   mb.add(box(0.15, 0.4, 0.035), '#ffffff', B.pelvis, T(0, 0.76, 0.165, -0.08), 1);
   mb.add(box(0.15, 0.36, 0.035), '#ffffff', B.pelvis, T(0, 0.78, -0.165, 0.08), 1);
-  mb.add(cyl(0.2, 0.2, 0.07, 10), COL.leather, B.pelvis, T(0, 1.0, 0, 0, 0, 0, 1, 1, 0.76));
-  mb.add(box(0.07, 0.06, 0.03), COL.bronze, B.pelvis, T(0, 1.0, 0.155));
+  if (!KIT.lod) {
+    mb.add(cyl(0.2, 0.2, 0.07, 10), COL.leather, B.pelvis, T(0, 1.0, 0, 0, 0, 0, 1, 1, 0.76));
+    mb.add(box(0.07, 0.06, 0.03), COL.bronze, B.pelvis, T(0, 1.0, 0.155));
+  }
   // 軀幹：內衣（隊伍色）＋ 甲
   mb.add(cyl(0.172, 0.158, 0.48, 10), '#ffffff', B.chest, T(0, 1.24, 0, 0, 0, 0, 1, 1, 0.68), 1);
   mb.add(cyl(0.19, 0.178, 0.38, 10), vestCol, B.chest, T(0, 1.25, 0.004, 0, 0, 0, 1, 1, 0.72), armorTint);
@@ -89,15 +91,17 @@ function human(mb: ModelBuilder, o: HumanOpts): void {
     mb.add(box(0.27, 0.17, 0.05), o.armor === 'general' ? COL.gold : COL.iron, B.chest, T(0, 1.33, 0.125, -0.1));
     mb.add(box(0.27, 0.12, 0.05), COL.iron, B.chest, T(0, 1.3, -0.125, 0.08));
   }
-  if (o.armor !== 'light') {
+  if (o.armor !== 'light' && !KIT.lod) {
     // 胸前護心鏡
     mb.add(cyl(0.06, 0.06, 0.02, 10), COL.bronze, B.chest, T(0, 1.3, 0.14, Math.PI / 2));
   }
   mb.add(cyl(0.055, 0.062, 0.1, 8), COL.skin, B.chest, T(0, 1.475, 0));
   // 頭
   mb.add(sphere(0.102, 10, 8), COL.skin, B.head, T(0, 1.585, 0.005, 0, 0, 0, 0.94, 1.1, 1));
-  mb.add(box(0.032, 0.045, 0.045), COL.skin, B.head, T(0, 1.57, 0.1));
-  mb.add(box(0.11, 0.02, 0.02), COL.hair, B.head, T(0, 1.615, 0.092));
+  if (!KIT.lod) {
+    mb.add(box(0.032, 0.045, 0.045), COL.skin, B.head, T(0, 1.57, 0.1));
+    mb.add(box(0.11, 0.02, 0.02), COL.hair, B.head, T(0, 1.615, 0.092));
+  }
   if (o.beard) {
     mb.add(box(0.12, 0.12, 0.08), COL.hair, B.head, T(0, 1.5, 0.07, 0.3));
   }
@@ -262,8 +266,10 @@ function horse(mb: ModelBuilder, coat: string, o: { barding?: boolean; caparison
   mb.add(box(0.07, 0.62, 0.14), dark, B.hNeck, T(0, 1.72, 0.74, -0.56));
   mb.add(box(0.2, 0.23, 0.52), coat, B.hNeck, T(0, 1.9, 1.18, 0.95));
   mb.add(box(0.17, 0.17, 0.12), dark, B.hNeck, T(0, 1.7, 1.38, 0.95));
-  mb.add(cone(0.04, 0.13, 5), coat, B.hNeck, T(0.065, 2.1, 1.0, -0.2));
-  mb.add(cone(0.04, 0.13, 5), coat, B.hNeck, T(-0.065, 2.1, 1.0, -0.2));
+  if (!KIT.lod) {
+    mb.add(cone(0.04, 0.13, 5), coat, B.hNeck, T(0.065, 2.1, 1.0, -0.2));
+    mb.add(cone(0.04, 0.13, 5), coat, B.hNeck, T(-0.065, 2.1, 1.0, -0.2));
+  }
   // 腿
   const legsDef: [number, number, number, number][] = [
     [0.17, 0.62, B.hFLu, B.hFLl],
@@ -276,7 +282,7 @@ function horse(mb: ModelBuilder, coat: string, o: { barding?: boolean; caparison
     mb.add(between(cyl(back ? 0.12 : 0.095, 0.065, 1, 8), v(x, 1.12, z), v(x, 0.58, z + (back ? -0.06 : 0.02))), coat, up);
     mb.add(between(cyl(0.05, 0.044, 1, 6), v(x, 0.6, z + (back ? -0.06 : 0.02)), v(x, 0.11, z + (back ? -0.04 : 0.03))), coat, lo);
     mb.add(cyl(0.06, 0.072, 0.11, 8), '#2a2522', lo, T(x, 0.055, z + (back ? -0.04 : 0.04)));
-    mb.add(cyl(0.055, 0.055, 0.12, 6), dark, lo, T(x, 0.2, z + (back ? -0.04 : 0.03)));
+    if (!KIT.lod) mb.add(cyl(0.055, 0.055, 0.12, 6), dark, lo, T(x, 0.2, z + (back ? -0.04 : 0.03)));
   }
   mb.add(between(cyl(0.07, 0.03, 1, 6), v(0, 1.4, -0.92), v(0, 0.92, -1.14)), dark, B.hTail);
   // 鞍
@@ -292,7 +298,7 @@ function horse(mb: ModelBuilder, coat: string, o: { barding?: boolean; caparison
     mb.add(box(0.22, 0.12, 0.3), COL.iron, B.hNeck, T(0, 1.98, 1.12, 0.95));
   }
   // 韁繩
-  mb.add(box(0.3, 0.02, 0.02), COL.leather, B.hNeck, T(0, 1.78, 1.3, 0.95));
+  if (!KIT.lod) mb.add(box(0.3, 0.02, 0.02), COL.leather, B.hNeck, T(0, 1.78, 1.3, 0.95));
 }
 
 interface Recipe {
@@ -323,7 +329,8 @@ const RECIPES: Record<ModelKey, Recipe> = {
 
 export const MODEL_KEYS = Object.keys(RECIPES) as ModelKey[];
 
-export function buildModel(key: ModelKey): ModelDef {
+export function buildModel(key: ModelKey, lod = 0): ModelDef {
+  KIT.lod = lod;
   const r = RECIPES[key];
   const mb = new ModelBuilder();
   if (r.mounted) {
@@ -340,5 +347,6 @@ export function buildModel(key: ModelKey): ModelDef {
     mb.add(box(0.5, 0.5, 0.1), COL.leather, B.hBody, T(0, 1.5, -0.05));
   }
   if (r.off) offhand(mb, r.off);
+  KIT.lod = 0;
   return { key, weapon: r.weapon, mounted: r.mounted, rig: makeRig(r.mounted), geometry: mb.build() };
 }

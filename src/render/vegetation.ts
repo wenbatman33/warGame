@@ -99,7 +99,7 @@ export function buildVegetation(hf: Heightfield, seed: number, geos: VegetationG
       if (!outside) trees.push({ x: jx, z: jz, s });
     }
   }
-  geos.trees.forEach((g, k) => chunked(g, treeMats, treeLists[k], 80, quality !== 'low', group));
+  geos.trees.forEach((g, k) => chunked(g, treeMats, treeLists[k], 120, quality !== 'low', group));
 
   // 岩石：坡地與邊框
   const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
@@ -123,7 +123,7 @@ export function buildVegetation(hf: Heightfield, seed: number, geos: VegetationG
   // 草叢：只在可遊玩區、草地上
   if (quality !== 'low') {
     const grassMat = swayMaterial(0.12, 0.95);
-    const count = quality === 'high' ? 26000 : 12000;
+    const count = quality === 'high' ? 18000 : 9000;
     const lists: THREE.Matrix4[][] = geos.grass.map(() => []);
     for (let k = 0; k < count; k++) {
       const x = (rng() - 0.5) * hf.play;
@@ -136,7 +136,7 @@ export function buildVegetation(hf: Heightfield, seed: number, geos: VegetationG
       m.compose(v.set(x, h - 0.05, z), q.setFromEuler(e), sc.set(s, s * (0.8 + rng() * 0.6), s));
       lists[rng() < 0.85 || lists.length === 1 ? 0 : 1].push(m.clone());
     }
-    geos.grass.forEach((g, k) => chunked(g, grassMat, lists[k], 60, false, group));
+    geos.grass.forEach((g, k) => chunked(g, grassMat, lists[k], 100, false, group));
   }
   return { group, trees };
 }

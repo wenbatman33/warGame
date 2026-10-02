@@ -17,6 +17,8 @@ export interface ControlHooks {
   /** 部署階段：拖曳己方軍團改位置 */
   deployMode?: () => boolean;
   onDeployMove?: (id: number, x: number, z: number) => void;
+  /** 部署階段：右鍵擺放（直接就位，不用走過去） */
+  onDeployPlace?: (id: number, x: number, z: number, facing: number, width?: number) => void;
 }
 
 const _v = new THREE.Vector3();
@@ -194,6 +196,19 @@ export class Controls {
       return;
     }
     const regs = ids.map((id) => w.regs[id]);
+    if (this.hooks.deployMode?.()) {
+      // 部署：整組平移到點擊處
+      let cx = 0;
+      let cz = 0;
+      for (const r of regs) {
+        cx += r.cx;
+        cz += r.cz;
+      }
+      cx /= regs.length;
+      cz /= regs.length;
+      for (const r of regs) this.hooks.onDeployPlace?.(r.id, x + r.cx - cx, z + r.cz - cz, r.facing);
+      return;
+    }
     let gx = 0;
     let gz = 0;
     for (const r of regs) {
@@ -257,7 +272,8 @@ export class Controls {
       const share = (r.alive * r.unit.spacing[0] * r.spacingMul()) / total;
       const len = avail * share;
       const sx = r.unit.spacing[0] * r.spacingMul();
-      const files = Math.max(2, Math.min(r.alive, Math.round(len / sx)));
+      // 至少兩排縱深（太薄的陣線一衝就破）
+      const files = Math.max(2, Math.min(Math.ceil(r.alive / 2), Math.round(len / sx)));
       const realLen = files * sx;
       const mid = pos + len / 2;
       out.push({ reg: r, x: ax + dx * mid, z: az + dz * mid, facing, width: files });
@@ -268,6 +284,10 @@ export class Controls {
   }
 
   commitLine(plan: PlanPreview[], run: boolean): void {
+    if (this.hooks.deployMode?.()) {
+      for (const p of plan) this.hooks.onDeployPlace?.(p.reg.id, p.x, p.z, p.facing, p.width);
+      return;
+    }
     for (const p of plan) this.world.commandMove([p.reg.id], p.x, p.z, p.facing, p.width, run);
     this.hooks.onOrder?.('line', plan.map((p) => p.reg.id));
   }

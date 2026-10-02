@@ -15,11 +15,17 @@ interface Layer {
 
 interface ModelSet {
   baked: BakedModel;
+  /** 近景 */
   live: Layer;
+  /** 遠景（低面數） */
+  far: Layer;
   dead: Layer;
   deadNext: number;
   deadFilled: number;
 }
+
+/** 近景模型的距離（m）；超過就用低面數模型 */
+export const LOD = { dist: 60 };
 
 const SOLDIER_SCALE = 1.0;
 
@@ -56,8 +62,8 @@ function makeMaterial(baked: BakedModel): { mat: THREE.MeshStandardMaterial; dep
   return { mat, depth };
 }
 
-function makeLayer(baked: BakedModel, cap: number, mats: { mat: THREE.Material; depth: THREE.Material }, shadow: boolean): Layer {
-  const src = baked.def.geometry;
+function makeLayer(baked: BakedModel, cap: number, mats: { mat: THREE.Material; depth: THREE.Material }, shadow: boolean, geo?: THREE.BufferGeometry): Layer {
+  const src = geo ?? baked.def.geometry;
   const g = new THREE.BufferGeometry();
   for (const name of ['position', 'normal', 'color', 'aBone', 'aMask']) g.setAttribute(name, src.getAttribute(name));
   const anim = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
@@ -84,16 +90,21 @@ export class SoldierRenderer {
   private sets = new Map<ModelKey, ModelSet>();
   shadows = true;
 
+  /** 鏡頭位置（決定近景／遠景模型） */
+  cam = new THREE.Vector3(0, 1e6, 0);
+
   constructor(caps: Partial<Record<ModelKey, number>> = {}, deadCap = 2500) {
     for (const key of MODEL_KEYS) {
       const baked = bakeModel(buildModel(key));
+      const lowGeo = buildModel(key, 1).geometry;
       const mats = makeMaterial(baked);
       const small = key.startsWith('gen_') || key === 'packhorse';
       const cap = caps[key] ?? (small ? 48 : 2400);
-      const live = makeLayer(baked, cap, mats, true);
-      const dead = makeLayer(baked, small ? 16 : deadCap, mats, false);
-      this.group.add(live.mesh, dead.mesh);
-      this.sets.set(key, { baked, live, dead, deadNext: 0, deadFilled: 0 });
+      const live = makeLayer(baked, small ? cap : Math.min(cap, 900), mats, true);
+      const far = makeLayer(baked, cap, mats, true, lowGeo);
+      const dead = makeLayer(baked, small ? 16 : deadCap, mats, false, lowGeo);
+      this.group.add(live.mesh, far.mesh, dead.mesh);
+      this.sets.set(key, { baked, live, far, dead, deadNext: 0, deadFilled: 0 });
     }
   }
 
@@ -103,13 +114,20 @@ export class SoldierRenderer {
 
   /** 每幀開始：清空活人層 */
   begin(): void {
-    for (const s of this.sets.values()) s.live.count = 0;
+    for (const s of this.sets.values()) {
+      s.live.count = 0;
+      s.far.count = 0;
+    }
   }
 
   /** 加一名活著（或正在倒下）的士兵 */
   push(key: ModelKey, x: number, y: number, z: number, yaw: number, anim: AnimName, start: number, speed: number, team: THREE.Color, tint: number): void {
     const s = this.sets.get(key)!;
-    const L = s.live;
+    const dx = x - this.cam.x;
+    const dy = y - this.cam.y;
+    const dz = z - this.cam.z;
+    let L = dx * dx + dy * dy + dz * dz < LOD.dist * LOD.dist ? s.live : s.far;
+    if (L.count >= L.cap) L = L === s.live ? s.far : s.live;
     if (L.count >= L.cap) return;
     write(L, L.count, s.baked, x, y, z, yaw, anim, start, speed, team, tint);
     L.count++;
@@ -140,25 +158,27 @@ export class SoldierRenderer {
 
   end(): void {
     for (const s of this.sets.values()) {
-      const L = s.live;
-      L.mesh.count = L.count;
-      L.mesh.castShadow = this.shadows;
-      if (L.count > 0) {
-        L.mesh.instanceMatrix.clearUpdateRanges();
-        L.mesh.instanceMatrix.addUpdateRange(0, L.count * 16);
-        L.mesh.instanceMatrix.needsUpdate = true;
-        for (const a of [L.anim, L.team, L.tint]) {
-          a.clearUpdateRanges();
-          a.addUpdateRange(0, L.count * a.itemSize);
-          a.needsUpdate = true;
-        }
-      }
+      for (const L of [s.live, s.far]) this.flush(L);
+    }
+  }
+
+  private flush(L: Layer): void {
+    L.mesh.count = L.count;
+    L.mesh.castShadow = this.shadows;
+    if (L.count === 0) return;
+    L.mesh.instanceMatrix.clearUpdateRanges();
+    L.mesh.instanceMatrix.addUpdateRange(0, L.count * 16);
+    L.mesh.instanceMatrix.needsUpdate = true;
+    for (const a of [L.anim, L.team, L.tint]) {
+      a.clearUpdateRanges();
+      a.addUpdateRange(0, L.count * a.itemSize);
+      a.needsUpdate = true;
     }
   }
 
   get liveCount(): number {
     let n = 0;
-    for (const s of this.sets.values()) n += s.live.count;
+    for (const s of this.sets.values()) n += s.live.count + s.far.count;
     return n;
   }
 }

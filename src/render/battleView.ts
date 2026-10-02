@@ -145,6 +145,7 @@ export class BattleView {
 
     // 士兵
     const sr = this.soldiers;
+    sr.cam.copy(this.stage.camera.position);
     sr.begin();
     for (let i = 0; i < s.count; i++) {
       const st = s.state[i];
