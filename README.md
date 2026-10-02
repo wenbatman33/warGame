@@ -12,7 +12,7 @@
 | **半渡而擊** | **軍團資訊與背襲警示** |
 | ![淺灘](docs/screenshots/ford.jpg) | ![資訊面板](docs/screenshots/info-panel.jpg) |
 
-**線上試玩**：https://wenbatman33.github.io/warGame/ （網址加 `?dev=1`，按 ` 鍵或右下齒輪開 DEV 微調工具）
+**線上試玩**：https://wenbatman33.github.io/warGame/ （已上線；推到 main 約 1–2 分鐘後自動更新。網址加 `?dev=1`，按 ` 鍵或右下齒輪開 DEV 微調工具）
 
 ## 進度
 
