@@ -1089,17 +1089,22 @@ export class Hud {
       this.terrainTip.textContent = tags.join('　');
       this.terrainTip.style.display = 'block';
     } else this.terrainTip.style.display = 'none';
-    // 戰況音樂：雙方交戰人數多時切高潮
+    // 戰況音樂：雙方交戰軍團多時切決戰曲；至少維持 25 秒、交戰明顯減少才切回（避免來回切換）
     if (b.phase === 'battle') {
       const engaged = w.regs.filter((r) => r.engagedWith.size > 0).length;
-      const want = engaged >= 6 ? 'climax' : 'battle';
+      const now = performance.now();
+      let want = this.music;
+      if (this.music === 'battle' && engaged >= 6) want = 'climax';
+      else if (this.music === 'climax' && engaged <= 3 && now - this.musicT > 25000) want = 'battle';
       if (want !== this.music) {
         this.music = want;
+        this.musicT = now;
         audio.music(want);
       }
     }
   }
-  private music = 'battle';
+  private music: 'battle' | 'climax' = 'battle';
+  private musicT = 0;
 
   private hqAlarmT = -1e9;
   /** 敵軍逼近我方本陣時警告（本陣失守＝戰敗） */

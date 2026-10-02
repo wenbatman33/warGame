@@ -12,7 +12,7 @@
 
 import { Ambience } from './ambience';
 import { type BankDef, SoundBank } from './bank';
-import { MUSIC_HIT_RECIPES, Music } from './music';
+import { Music } from './music';
 import { AMB_EVENTS, type AmbEventId, SFX, SFX_SPEC } from './sfx';
 import { type Kit, biquad, clamp, gainNode, makeImpulse, makeNoise, panner } from './synth';
 import { type AmbienceLevels, MUSIC_MODES, type MusicMode, type SfxId, VOICE_IDS, type VoiceId } from './types';
@@ -269,7 +269,6 @@ export class AudioEngine {
         if (s.bank && s.len) defs.push({ name, recipe: SFX[name as SfxId], count: s.bank, len: s.len, stereo: s.stereo });
       }
     }
-    for (const h of MUSIC_HIT_RECIPES) defs.splice(2, 0, { name: h.name, recipe: h.recipe, count: h.count, len: h.len });
     try {
       await this.bank.render(kit, defs);
     } catch {

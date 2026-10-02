@@ -1,464 +1,718 @@
-// 程式合成古風配樂
-// 五聲音階（宮商角徵羽）調式；古箏／琵琶（Karplus-Strong 撥弦）、笛子、二胡、笙、大鼓、梆子、鈸、鑼、牛角號
-// 以小節為單位排程（lookahead），旋律用「動機 → 應答」的 4 小節樂句生成，聽起來有重複與回應而不是亂彈
-// 模式切換：舊樂手淡出、新樂手淡入（交叉淡化）
+// 史詩配樂（電影預告片式編曲）
+// 每種模式是一首「曲目」：數個 8 小節段落（主題、律動、間奏、高潮…），段落依序循環
+// 每個段落在 OfflineAudioContext 預渲染成立體聲緩衝（太鼓群、弦樂、銅管、合唱、嗩吶／二胡／笛子旋律、殘響），
+// 播放時只需排程 BufferSource 首尾相接 → 可以用大量聲部而不吃即時 CPU
+// 主旋律是寫好的固定曲調（D 小調，帶五聲音階色彩），不再隨機產生
+// 記憶體：只保留目前曲目與可能接下來會用到的曲目（例：交戰時預備高潮、勝利、敗北）
 
 import type { MusicMode } from './types';
 import type { SoundBank } from './bank';
-import type { Recipe } from './sfx';
-import { bowed, cymbal, drumHit, flute, gongHit, hornNote, pluck, sheng, woodblock } from './instruments';
-import { type Kit, type Rng, biquad, clamp, gainNode, mtof, pick, shaper } from './synth';
+import { drumHit, pluck, woodblock } from './instruments';
+import { type LeadKind, type LineNote, bigGong, braam, brass, choir, crash, impact, line, riser, spiccato, strings, subBass, taiko } from './orchestra';
+import { type Kit, biquad, gainNode, makeImpulse, mtof } from './synth';
 
 type PlayMode = Exclude<MusicMode, 'none'>;
 
-// 調式：相對主音的半音
-const GONG = [0, 2, 4, 7, 9]; // 宮調（明亮莊嚴）
-const YU = [0, 3, 5, 7, 10]; // 羽調（悲壯）
+/** 預渲染取樣率（配樂不需要 16 kHz 以上，省三分之一記憶體） */
+const RENDER_SR = 32000;
+/** 段落前置（讓起音不被切掉）與尾巴（殘響、鼓聲延音，與下一段重疊） */
+const PRE = 0.12;
+const TAIL = 3.5;
 
-/** 五聲音階級數 → 半音（可為負，跨八度） */
-function semi(scale: number[], deg: number): number {
-  const o = Math.floor(deg / 5);
-  return scale[deg - o * 5] + 12 * o;
+// ─────────────────────────────────────────── 樂理小工具
+
+const PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+/** 音名 → MIDI（例：C#5、Bb4） */
+function midiOf(name: string): number {
+  const m = /^([A-G])([#b]?)(-?\d)$/.exec(name);
+  if (!m) throw new Error(`音名錯誤：${name}`);
+  return 12 * (Number(m[3]) + 1) + PC[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
 }
 
-interface MelodySpec {
-  inst: 'dizi' | 'erhu';
-  rhythm: number[]; // 可用的音長（16 分音符數）
-  rest: number; // 休止機率
-  lo: number; // 音域（級數）
-  hi: number;
-  oct: number; // 八度位移
-  gain: number;
-  skipFirst?: boolean; // 第一句不吹（前奏）
-  down?: number; // 下行傾向 0..1
-  silent?: number; // 整句休息機率
-}
-
-interface Style {
-  bpm: number;
-  root: number; // 主音 MIDI
-  scale: number[];
-  prog: number[]; // 每小節低音級數（循環）
-  wet: number;
-  gain: number;
-  fadeIn: number;
-  melody: MelodySpec | null;
-  bar: (b: Bar) => void;
-}
-
-interface Note {
-  s: number; // 起始（16 分音符，0..31）
+interface Mel {
+  s: number; // 起始（16 分音符）
   len: number;
-  deg: number;
+  midi: number;
+  grace: boolean;
 }
 
-// 琵琶頑固音型（相對低音的級數）
-const RIFFS: number[][] = [
-  [0, 0, 2, 0, 3, 2, 1, 0],
-  [0, 2, 3, 2, 0, 2, -1, 0],
-  [0, 0, 3, 3, 2, 2, 1, 1],
-  [0, 3, 2, 0, 5, 3, 2, 1],
-];
-
-/** 一小節的排程工具 */
-class Bar {
-  readonly k: Kit;
-  readonly r: Rng;
-  readonly bass: number;
-  constructor(
-    private p: Player,
-    readonly t0: number,
-    readonly step: number,
-    readonly i: number,
-  ) {
-    this.k = p.kit;
-    this.r = p.kit.rnd;
-    const pr = p.style.prog;
-    this.bass = pr[i % pr.length];
-  }
-  at(s: number): number {
-    return this.t0 + s * this.step;
-  }
-  /** 級數 → 頻率（oct＝相對主音的八度） */
-  f(deg: number, oct = 0): number {
-    const st = this.p.style;
-    return mtof(st.root + 12 * oct + semi(st.scale, deg));
-  }
-  bassSemi(): number {
-    return semi(this.p.style.scale, this.bass);
-  }
-  get riff8(): number[] {
-    return this.p.riff.slice(0, 8);
-  }
-  get riff16(): number[] {
-    return this.p.riff;
-  }
-  zheng(s: number, deg: number, oct: number, gain: number, vib = 0): void {
-    pluck(this.k, this.p.pluckBus, this.at(s), this.f(deg, oct), gain, 'zheng', vib);
-  }
-  /** 琵琶單音；lenSteps 給定時在該長度後止音（快速頑固音型） */
-  pipa(s: number, deg: number, oct: number, gain: number, lenSteps = 0): void {
-    pluck(this.k, this.p.pluckBus, this.at(s), this.f(deg, oct), gain, 'pipa', 0, lenSteps > 0 ? Math.max(0.12, lenSteps * this.step * 1.6) : 0);
-  }
-  /** 輪指：快速重複並漸強 */
-  tremolo(s: number, len: number, deg: number, oct: number, gain: number): void {
-    const n = Math.max(2, Math.floor((len * this.step) / 0.06));
-    const f = this.f(deg, oct);
-    for (let j = 0; j < n; j++) pluck(this.k, this.p.pluckBus, this.at(s) + j * 0.06, f, gain * (0.5 + (0.5 * j) / n), 'pipa', 0, j < n - 1 ? 0.1 : 0);
-  }
-  /** 掃弦 */
-  strum(s: number, degs: number[], oct: number, gain: number): void {
-    degs.forEach((d, j) => pluck(this.k, this.p.pluckBus, this.at(s) + j * 0.018, this.f(d, oct), gain, 'pipa'));
-  }
-  /** 古箏刮奏（花指） */
-  gliss(s: number, from: number, to: number, oct: number, gain: number, dt: number): void {
-    const dir = to > from ? 1 : -1;
-    const n = Math.abs(to - from) + 1;
-    for (let j = 0; j < n; j++) {
-      pluck(this.k, this.p.pluckBus, this.at(s) + j * dt, this.f(from + j * dir, oct), gain * (0.6 + (0.4 * j) / n), 'zheng');
-    }
-  }
-  /** 鼓（優先用預渲染緩衝，2 個節點；尚未渲染時即時合成） */
-  drum(s: number, size: 'big' | 'mid' | 'tom', gain: number): void {
-    const name = size === 'big' ? 'm_big' : size === 'mid' ? 'm_mid' : 'm_tom';
-    this.p.hit(name, this.at(s), gain, this.p.drumBus);
-  }
-  clap(s: number, gain: number): void {
-    this.p.hit('m_clap', this.at(s), gain, this.p.inst);
-  }
-  crash(s: number, gain: number): void {
-    this.p.hit('m_crash', this.at(s), gain, this.p.inst);
-  }
-  tam(s: number, gain: number): void {
-    gongHit(this.k, this.p.inst, this.at(s), 150, gain, 4);
-  }
-  horn(s: number, deg: number, oct: number, lenSteps: number, gain: number): void {
-    hornNote(this.k, this.p.inst, this.at(s), this.f(deg, oct), lenSteps * this.step, gain, { attack: 0.35, glide: 0.93, release: 0.5 });
-  }
-  /** 笙長音（semis 相對主音的半音） */
-  pad(s: number, semis: number[], lenSteps: number, gain: number): void {
-    const root = this.p.style.root;
-    sheng(this.k, this.p.inst, this.at(s), semis.map((x) => mtof(root + x)), lenSteps * this.step, gain);
-  }
-}
-
-// ─────────────────────────────────────────── 配樂打擊樂（預渲染）
-
-export type MusicHitId = 'm_big' | 'm_mid' | 'm_tom' | 'm_clap' | 'm_crash';
-type HitLive = (k: Kit, out: AudioNode, t: number, gain: number) => number;
-
-/** 配樂打擊樂：live 為即時合成版本（gain 可變）；預渲染時以 gain=1 跑同一份 */
-export const MUSIC_HITS: Record<MusicHitId, { live: HitLive; count: number; len: number }> = {
-  m_big: { count: 4, len: 1.2, live: (k, out, t, gain) => drumHit(k, out, t, { f: 52, gain, decay: 0.9 }) },
-  m_mid: { count: 3, len: 0.7, live: (k, out, t, gain) => drumHit(k, out, t, { f: 78, gain, decay: 0.5, lite: true }) },
-  m_tom: { count: 4, len: 0.4, live: (k, out, t, gain) => drumHit(k, out, t, { f: 125, gain, decay: 0.22, lite: true, skin: 0.5 }) },
-  m_clap: { count: 3, len: 0.15, live: (k, out, t, gain) => woodblock(k, out, t, gain, 1250) },
-  m_crash: { count: 2, len: 1.6, live: (k, out, t, gain) => cymbal(k, out, t, gain) },
-};
-
-/** 給 SoundBank 用的配方（gain＝1） */
-export const MUSIC_HIT_RECIPES: Array<{ name: MusicHitId; recipe: Recipe; count: number; len: number }> = (
-  Object.keys(MUSIC_HITS) as MusicHitId[]
-).map((name) => ({ name, recipe: (k, out, t) => MUSIC_HITS[name].live(k, out, t, 1), count: MUSIC_HITS[name].count, len: MUSIC_HITS[name].len }));
-
-// ─────────────────────────────────────────── 各模式曲風
-
-const STYLES: Record<PlayMode, Style> = {
-  // 主選單：莊嚴悠遠——笙鋪底、古箏琶音、笛子長句、偶爾大鼓與鑼
-  menu: {
-    bpm: 64,
-    root: 62,
-    scale: GONG,
-    prog: [0, -1, -2, 0],
-    wet: 0.55,
-    gain: 1.4,
-    fadeIn: 2.5,
-    melody: { inst: 'dizi', rhythm: [4, 8, 8, 6, 2, 12, 4], rest: 0.18, lo: -1, hi: 7, oct: 1, gain: 0.24, skipFirst: true, down: 0.5, silent: 0.2 },
-    bar(b) {
-      const bs = b.bassSemi();
-      b.pad(0, [bs - 24, bs - 17, bs - 12], 16, 0.12);
-      const arp = [0, 2, 3, 5, 7, 5, 3, 2];
-      arp.forEach((o, j) => b.zheng(j * 2, b.bass + o, -1, j === 0 ? 0.3 : 0.18));
-      if (b.i % 4 === 3) b.gliss(12, b.bass - 2, b.bass + 8, -1, 0.15, 0.035);
-      if (b.i % 2 === 0) b.drum(0, 'big', 0.35);
-      if (b.i % 8 === 0) b.tam(0, 0.15);
-    },
-  },
-  // 部署：緊張低鼓——低音鼓頑固節奏、梆子滴答、琵琶低音輪指、二胡偶爾低吟
-  deploy: {
-    bpm: 84,
-    root: 57,
-    scale: YU,
-    prog: [0, 0, -1, -2],
-    wet: 0.45,
-    gain: 0.9,
-    fadeIn: 2,
-    melody: { inst: 'erhu', rhythm: [8, 12, 16, 4, 6], rest: 0.3, lo: -2, hi: 4, oct: 0, gain: 0.18, skipFirst: true, down: 0.55, silent: 0.35 },
-    bar(b) {
-      const bs = b.bassSemi();
-      b.drum(0, 'big', 0.55);
-      b.drum(6, 'mid', 0.28);
-      b.drum(10, 'mid', 0.3);
-      b.drum(12, 'big', 0.38);
-      if (b.i % 4 === 3) for (const s of [13, 14, 15]) b.drum(s, 'tom', 0.14 + (s - 13) * 0.04);
-      b.clap(4, 0.06);
-      b.clap(12, 0.06);
-      b.pad(0, [bs - 24, bs - 17], 16, 0.13);
-      b.zheng(0, b.bass, -2, 0.32);
-      if (b.i % 2 === 1) b.tremolo(8, 8, b.bass, -1, 0.1);
-    },
-  },
-  // 交戰：激昂鼓點——大鼓＋中鼓 16 分律動、梆子反拍、琵琶頑固音型、笛子快板
-  battle: {
-    bpm: 128,
-    root: 62,
-    scale: YU,
-    prog: [0, 0, -1, -1, 0, 0, 1, -2],
-    wet: 0.3,
-    gain: 0.75,
-    fadeIn: 1.5,
-    melody: { inst: 'dizi', rhythm: [2, 2, 4, 4, 6, 8, 2], rest: 0.12, lo: 0, hi: 8, oct: 1, gain: 0.22, down: 0.5, silent: 0.15 },
-    bar(b) {
-      b.drum(0, 'big', 0.7);
-      b.drum(8, 'big', 0.6);
-      if (b.r() < 0.5) b.drum(10, 'big', 0.4);
-      b.drum(14, 'mid', 0.35);
-      for (const s of [2, 4, 6, 12, 13]) b.drum(s, 'tom', 0.16 + b.r() * 0.06);
-      for (const s of [2, 6, 10, 14]) b.clap(s, 0.07);
-      if (b.i % 4 === 3) for (let s = 8; s < 16; s++) b.drum(s, 'tom', 0.15 + (s - 8) * 0.03);
-      if (b.i % 4 === 0) b.crash(0, 0.2);
-      const riff = b.riff8;
-      for (let j = 0; j < 8; j++) b.pipa(j * 2, b.bass + riff[j], -1, j === 0 ? 0.28 : 0.18, 2);
-      b.strum(0, [b.bass, b.bass + 2, b.bass + 3], -1, 0.14);
-      b.zheng(0, b.bass, -2, 0.4);
-      b.zheng(8, b.bass, -2, 0.28);
-    },
-  },
-  // 決戰高潮：更急——每拍大鼓、16 分中鼓連打、琵琶 16 分輪奏、號角長音、鑼
-  climax: {
-    bpm: 148,
-    root: 64,
-    scale: YU,
-    prog: [0, 0, -1, -2, 0, 1, -1, 0],
-    wet: 0.28,
-    gain: 0.65,
-    fadeIn: 1.0,
-    melody: { inst: 'dizi', rhythm: [2, 2, 2, 4, 4, 6], rest: 0.08, lo: 2, hi: 9, oct: 1, gain: 0.22, down: 0.45, silent: 0.1 },
-    bar(b) {
-      for (const s of [0, 4, 8, 12]) b.drum(s, 'big', 0.6);
-      for (let s = 0; s < 16; s++) if (s % 4) b.drum(s, 'tom', s % 2 ? 0.09 : 0.16);
-      if (b.i % 2 === 0) b.crash(0, 0.22);
-      if (b.i % 8 === 0) b.tam(0, 0.2);
-      const riff = b.riff16;
-      for (let j = 0; j < 16; j++) b.pipa(j, b.bass + riff[j], -1, j % 4 === 0 ? 0.22 : 0.13, 1);
-      if (b.i % 2 === 0) b.horn(0, b.bass, -1, 28, 0.12);
-      b.zheng(0, b.bass, -2, 0.42);
-      b.zheng(8, b.bass, -2, 0.32);
-    },
-  },
-  // 凱旋：宮調明亮——古箏 16 分琶音、笛子高亢、鼓與鈸、號角
-  victory: {
-    bpm: 100,
-    root: 62,
-    scale: GONG,
-    prog: [0, 0, -2, -1, 0, -2, 1, 0],
-    wet: 0.4,
-    gain: 0.8,
-    fadeIn: 0.6,
-    melody: { inst: 'dizi', rhythm: [4, 4, 8, 2, 2, 6], rest: 0.1, lo: 0, hi: 9, oct: 1, gain: 0.24, down: 0.4 },
-    bar(b) {
-      const bs = b.bassSemi();
-      b.drum(0, 'big', 0.55);
-      b.drum(8, 'big', 0.45);
-      b.drum(12, 'tom', 0.22);
-      b.drum(14, 'tom', 0.22);
-      b.clap(4, 0.06);
-      b.clap(12, 0.06);
-      if (b.i % 4 === 0) b.crash(0, 0.2);
-      if (b.i % 4 === 3) b.gliss(12, b.bass, b.bass + 10, -1, 0.14, 0.03);
-      const arp = [0, 2, 3, 5, 3, 5, 7, 8, 5, 7, 8, 10, 8, 7, 5, 3];
-      for (let j = 0; j < 16; j++) b.zheng(j, b.bass + arp[j], -1, j % 4 === 0 ? 0.18 : 0.11);
-      b.pad(0, [bs - 12, bs - 5, bs], 16, 0.08);
-      if (b.i % 4 === 0) b.horn(0, b.bass, -1, 14, 0.11);
-    },
-  },
-  // 敗北：悲涼——二胡下行長句、稀疏古箏揉弦、低音笙、遠方喪鼓
-  defeat: {
-    bpm: 54,
-    root: 57,
-    scale: YU,
-    prog: [0, -1, -2, 0],
-    wet: 0.6,
-    gain: 1.2,
-    fadeIn: 1.2,
-    melody: { inst: 'erhu', rhythm: [8, 12, 16, 6, 4], rest: 0.15, lo: -3, hi: 5, oct: 0, gain: 0.2, down: 0.62 },
-    bar(b) {
-      const bs = b.bassSemi();
-      if (b.i % 2 === 0) b.drum(0, 'big', 0.3);
-      b.pad(0, [bs - 24, bs - 17], 16, 0.1);
-      b.zheng(0, b.bass, -1, 0.2, 0.01);
-      if (b.r() < 0.6) b.zheng(8, b.bass + 3, -1, 0.14, 0.008);
-      if (b.i % 8 === 4) b.tam(0, 0.1);
-    },
-  },
-};
-
-// ─────────────────────────────────────────── 旋律生成
-
-function makeMotif(r: Rng, m: MelodySpec): Note[] {
-  const notes: Note[] = [];
+/** 旋律字串：「音名:長度」，長度以 16 分音符計；「^」＝上方倚音；「-:4」＝休止；「|」只是小節線 */
+function mel(src: string): Mel[] {
+  const out: Mel[] = [];
   let s = 0;
-  let d = Math.round((m.lo + m.hi) / 2) + pick(r, [-1, 0, 1]);
-  const down = m.down ?? 0.5;
-  while (s < 32) {
-    let len = pick(r, m.rhythm);
-    if (s + len > 32) len = 32 - s;
-    if (s > 0 && r() < m.rest) {
-      s += len;
-      continue;
-    }
-    const x = r();
-    let mv = x < 0.2 ? 0 : x < 0.8 ? (r() < down ? -1 : 1) : r() < down ? -2 : 2;
-    if (x > 0.95) mv = r() < 0.5 ? 3 : -3;
-    d += mv;
-    if (d < m.lo) d = m.lo + 1;
-    if (d > m.hi) d = m.hi - 1;
-    notes.push({ s, len, deg: d });
+  for (const tok of src.split(/\s+/)) {
+    if (!tok || tok === '|') continue;
+    const [n, l] = tok.split(':');
+    const grace = l.endsWith('^');
+    const len = parseInt(l, 10);
+    if (n !== '-') out.push({ s, len, midi: midiOf(n), grace });
     s += len;
   }
-  return notes;
+  return out;
 }
 
-// ─────────────────────────────────────────── 樂手（一個模式一組）
+/** 和弦（根音、三音、五音的音級） */
+const CHORDS: Record<string, [number, number, number]> = {
+  Dm: [2, 5, 9],
+  Bb: [10, 2, 5],
+  F: [5, 9, 0],
+  C: [0, 4, 7],
+  Gm: [7, 10, 2],
+  A: [9, 1, 4],
+};
+
+/** 大於等於 lo 的最低一個指定音級 */
+function above(pc: number, lo: number): number {
+  return lo + ((pc - lo) % 12 + 12) % 12;
+}
+
+type Voicing = 'close' | 'open' | 'power';
+function voice(ch: string, lo: number, v: Voicing): number[] {
+  const [r, t, f] = CHORDS[ch];
+  const root = above(r, lo);
+  if (v === 'power') return [root, above(f, root), root + 12];
+  const third = above(t, root + 1);
+  const fifth = above(f, root + 1);
+  if (v === 'close') return [root, third, fifth].sort((a, b) => a - b);
+  return [root, fifth, third + 12];
+}
+
+// ─────────────────────────────────────────── 曲調
+
+/** 主題（和弦 Dm Bb F C Dm Bb C Dm）：四度上揚的英雄動機 */
+const THEME = mel(`
+  A4:2 D5:6^ F5:4 E5:2 D5:2 | F5:6 G5:2 F5:4 D5:4 | C5:4 F5:4 A5:6^ G5:2 | G5:12 E5:4 |
+  A4:2 D5:6 F5:4 G5:2 A5:2 | Bb5:6^ A5:2 G5:4 F5:4 | G5:6 E5:2 C5:4 E5:4 | D5:16`);
+const T_CHORDS = ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'C', 'Dm'];
+
+/** 副題（和弦 Bb C Dm Dm Bb C A A）：往屬和弦推進，製造張力 */
+const THEME_B = mel(`
+  F5:8 D5:4 C5:4 | G5:8 E5:4 C5:4 | D5:12^ A4:4 | D5:4 E5:4 F5:8 |
+  F5:8 G5:4 A5:4 | G5:8 E5:4 C5:4 | E5:12^ C#5:4 | E5:16`);
+const B_CHORDS = ['Bb', 'C', 'Dm', 'Dm', 'Bb', 'C', 'A', 'A'];
+
+/** 凱旋號角（F 大調） */
+const FANFARE = mel(`C4:2 F4:6 A4:4 C5:4 | D5:8 C5:4 Bb4:4 | C5:6 E5:2 G5:8 | F5:16`);
+/** 凱旋主題（主題改大調） */
+const V_THEME = mel(`
+  C5:2 F5:6^ A5:4 G5:2 F5:2 | A5:6 Bb5:2 A5:4 F5:4 | D5:4 F5:4 Bb5:6^ A5:2 | G5:12 E5:4 |
+  C5:2 F5:6 A5:4 Bb5:2 C6:2 | D6:6^ C6:2 A5:4 F5:4 | G5:8 E5:4 G5:4 | F5:16`);
+/** 輓歌（二胡） */
+const LAMENT = mel(`
+  D5:8^ C5:4 A4:4 | Bb4:8 A4:4 F4:4 | G4:6 A4:2 Bb4:4 D5:4 | C#5:12^ A4:4 |
+  D5:6 F5:2 E5:4 D5:4 | Bb4:8 A4:4 G4:4 | A4:8 G4:4 E4:4 | D4:16`);
+
+// ─────────────────────────────────────────── 段落編寫工具
+
+type Bus = 'drums' | 'strings' | 'brass' | 'choir' | 'lead' | 'pluck' | 'low' | 'fx';
+/** 各聲部送殘響量 */
+const SEND: Record<Bus, number> = { drums: 0.32, strings: 0.42, brass: 0.36, choir: 0.6, lead: 0.3, pluck: 0.35, low: 0.05, fx: 0.4 };
+/** 各聲部音量 */
+const LEVEL: Record<Bus, number> = { drums: 1, strings: 1, brass: 0.9, choir: 0.9, lead: 1, pluck: 0.9, low: 1, fx: 0.8 };
+
+class Comp {
+  readonly bus: Record<Bus, GainNode>;
+  constructor(
+    readonly k: Kit,
+    readonly step: number,
+    readonly chords: string[],
+    mix: AudioNode,
+    hall: AudioNode,
+  ) {
+    const c = k.ctx;
+    const mk = (b: Bus): GainNode => {
+      const g = gainNode(c, LEVEL[b]);
+      g.connect(mix);
+      g.connect(gainNode(c, SEND[b])).connect(hall);
+      return g;
+    };
+    this.bus = { drums: mk('drums'), strings: mk('strings'), brass: mk('brass'), choir: mk('choir'), lead: mk('lead'), pluck: mk('pluck'), low: mk('low'), fx: mk('fx') };
+  }
+  t(bar: number, s = 0): number {
+    return PRE + (bar * 16 + s) * this.step;
+  }
+  ch(bar: number): string {
+    return this.chords[bar % this.chords.length];
+  }
+  dur(steps: number): number {
+    return steps * this.step;
+  }
+  root(bar: number, lo: number): number {
+    return above(CHORDS[this.ch(bar)][0], lo);
+  }
+
+  // 打擊
+  taiko(bar: number, s: number, size: 'o' | 'm' | 's', g: number): void {
+    taiko(this.k, this.bus.drums, this.t(bar, s), size, g);
+  }
+  /** 鼓滾：from～to（16 分音符）漸強 */
+  roll(bar: number, from: number, to: number, size: 'm' | 's', g0: number, g1: number): void {
+    for (let s = from; s <= to; s++) this.taiko(bar, s, size, g0 + ((g1 - g0) * (s - from)) / Math.max(1, to - from));
+  }
+  crash(bar: number, g: number, s = 0): void {
+    crash(this.k, this.bus.drums, this.t(bar, s), g);
+  }
+  gong(bar: number, g: number): void {
+    bigGong(this.k, this.bus.drums, this.t(bar), g);
+  }
+  impact(bar: number, g: number): void {
+    impact(this.k, this.bus.fx, this.t(bar), g);
+  }
+  riser(bar: number, s: number, steps: number, g: number): void {
+    riser(this.k, this.bus.fx, this.t(bar, s), this.dur(steps), g);
+  }
+  tick(bar: number, s: number, g: number): void {
+    woodblock(this.k, this.bus.drums, this.t(bar, s), g, 1350);
+  }
+
+  // 和聲
+  pad(bar: number, bars: number, lo: number, v: Voicing, g: number, o: Parameters<typeof strings>[6] = {}): void {
+    strings(this.k, this.bus.strings, this.t(bar), voice(this.ch(bar), lo, v).map(mtof), this.dur(bars * 16) * 0.98, g, o);
+  }
+  choir(bar: number, bars: number, lo: number, v: Voicing, g: number, vowel: 'a' | 'o' | 'u'): void {
+    choir(this.k, this.bus.choir, this.t(bar), voice(this.ch(bar), lo, v).map(mtof), this.dur(bars * 16) * 0.97, g, vowel);
+  }
+  brass(bar: number, s: number, steps: number, lo: number, v: Voicing, g: number, o: Parameters<typeof brass>[6] = {}): void {
+    brass(this.k, this.bus.brass, this.t(bar, s), voice(this.ch(bar), lo, v).map(mtof), this.dur(steps), g, o);
+  }
+  braam(bar: number, steps: number, g: number): void {
+    braam(this.k, this.bus.brass, this.t(bar), mtof(this.root(bar, 38)), this.dur(steps), g);
+  }
+  sub(bar: number, bars: number, g: number): void {
+    subBass(this.k, this.bus.low, this.t(bar), mtof(this.root(bar, 26)), this.dur(bars * 16) * 0.95, g);
+  }
+  /** 跳弓頑固音型（steps＝出聲的 16 分位置；accent＝重音位置） */
+  ostinato(bar: number, lo: number, steps: number[], g: number, accent: number[] = [0, 8]): void {
+    const f = mtof(this.root(bar, lo));
+    for (const s of steps) spiccato(this.k, this.bus.strings, this.t(bar, s), f, accent.includes(s) ? g * 1.45 : g, this.dur(2) * 0.9);
+  }
+  /** 和弦音 8 分音符脈動（弦樂） */
+  pulse(bar: number, lo: number, g: number): void {
+    const v = voice(this.ch(bar), lo, 'open');
+    for (let j = 0; j < 8; j++) spiccato(this.k, this.bus.strings, this.t(bar, j * 2), mtof(v[j % 2 ? 1 : 0]), j % 4 === 0 ? g * 1.3 : g, this.dur(2), j % 2 ? 0.3 : -0.3);
+  }
+  /** 古箏琶音 */
+  zheng(bar: number, lo: number, g: number, sixteenths = false): void {
+    const v = voice(this.ch(bar), lo, 'close');
+    const seq = [v[0], v[1], v[2], v[0] + 12, v[1] + 12, v[2] + 12, v[0] + 24, v[2] + 12];
+    const n = sixteenths ? 16 : 8;
+    for (let j = 0; j < n; j++) {
+      const m = sixteenths ? seq[j < 8 ? j : 15 - j] : seq[j];
+      pluck(this.k, this.bus.pluck, this.t(bar, j * (sixteenths ? 1 : 2)), mtof(m), j === 0 ? g * 1.4 : g, 'zheng');
+    }
+  }
+  /** 琵琶 8 分音型（和弦音） */
+  pipa(bar: number, lo: number, g: number): void {
+    const v = voice(this.ch(bar), lo, 'close');
+    const seq = [v[0], v[0], v[2], v[0], v[1], v[2], v[1], v[0]];
+    for (let j = 0; j < 8; j++) pluck(this.k, this.bus.pluck, this.t(bar, j * 2), mtof(seq[j]), j % 4 === 0 ? g * 1.4 : g, 'pipa', 0, this.dur(2) * 1.6);
+  }
+  /** 琵琶輪指（16 分快速重複） */
+  pipaTremolo(bar: number, lo: number, g: number): void {
+    const f = mtof(this.root(bar, lo));
+    for (let s = 0; s < 16; s++) pluck(this.k, this.bus.pluck, this.t(bar, s), f, g * (0.7 + 0.3 * ((s % 4) === 0 ? 1 : 0)), 'pipa', 0, this.dur(1) * 1.5);
+  }
+
+  // 旋律
+  line(kind: LeadKind, m: Mel[], g: number, oct = 0, fromBar = 0, pan = 0): void {
+    const notes: LineNote[] = m.map((n) => ({
+      t: this.t(fromBar, n.s),
+      dur: this.dur(n.len) * 0.97,
+      f: mtof(n.midi + oct * 12),
+      grace: n.grace ? mtof(n.midi + oct * 12 + 2) : undefined,
+    }));
+    line(this.k, this.bus.lead, notes, kind, g, pan);
+  }
+  /** 低音區號角呼喚（遠方） */
+  call(bar: number, src: string, g: number): void {
+    this.line('horns', mel(src), g, 0, bar, -0.3);
+  }
+  drum(bar: number, s: number, f: number, g: number, decay: number): void {
+    drumHit(this.k, this.bus.drums, this.t(bar, s), { f, gain: g, decay, lite: true });
+  }
+}
+
+interface Section {
+  bars: number;
+  chords: string[];
+  /** 整段一次寫入的部分（旋律線等） */
+  once?: (c: Comp) => void;
+  /** 逐小節寫入（每小節之間讓出主執行緒） */
+  bar: (c: Comp, i: number) => void;
+}
+
+interface Cue {
+  bpm: number;
+  /** 目標響度（RMS） */
+  rms: number;
+  intro?: string;
+  loop: string[];
+  sections: Record<string, Section>;
+}
+
+const GALLOP = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15];
+const ALL16 = Array.from({ length: 16 }, (_, i) => i);
+
+// ─────────────────────────────────────────── 曲目
+
+const CUES: Record<PlayMode, Cue> = {
+  // 主選單：莊嚴遼闊——二胡唱主題 → 號角＋合唱全奏
+  menu: {
+    bpm: 70,
+    rms: 0.085,
+    loop: ['A', 'B'],
+    sections: {
+      A: {
+        bars: 8,
+        chords: T_CHORDS,
+        once: (c) => c.line('erhu', THEME, 0.2),
+        bar: (c, i) => {
+          c.pad(i, 1, 50, 'open', 0.12, { attack: 0.9, release: 1.4 });
+          c.sub(i, 1, 0.16);
+          c.zheng(i, 50, 0.12);
+          if (i % 4 === 0) c.taiko(i, 0, 'o', 0.5);
+          if (i % 2 === 1) c.taiko(i, 8, 'm', 0.22);
+          if (i === 0) c.gong(0, 0.14);
+          if (i >= 4) c.choir(i, 1, 57, 'close', 0.05, 'u');
+          if (i === 7) c.roll(7, 10, 15, 's', 0.06, 0.2);
+        },
+      },
+      B: {
+        bars: 8,
+        chords: T_CHORDS,
+        once: (c) => {
+          c.line('horns', THEME, 0.16, -1);
+          c.line('dizi', THEME, 0.1, 0, 0, 0.2);
+        },
+        bar: (c, i) => {
+          if (i === 0) c.impact(0, 0.35);
+          c.choir(i, 1, 57, 'close', 0.085, 'a');
+          c.pad(i, 1, 50, 'open', 0.07, { attack: 0.5 });
+          c.pulse(i, 50, 0.06);
+          c.sub(i, 1, 0.17);
+          c.taiko(i, 0, 'o', 0.55);
+          c.taiko(i, 6, 'm', 0.24);
+          c.taiko(i, 8, 'o', 0.4);
+          c.taiko(i, 12, 'm', 0.3);
+          for (let s = 2; s < 16; s += 4) c.taiko(i, s, 's', 0.05);
+          if (i % 4 === 0) c.crash(i, 0.17);
+          if (i === 7) c.roll(7, 8, 15, 'm', 0.15, 0.45);
+        },
+      },
+    },
+  },
+  // 部署：山雨欲來——低音弦樂急奏、心跳鼓、遠方號角、銅管漸強
+  deploy: {
+    bpm: 92,
+    rms: 0.1,
+    loop: ['A', 'B'],
+    sections: {
+      A: {
+        bars: 8,
+        chords: ['Dm', 'Dm', 'Bb', 'Bb', 'Gm', 'Gm', 'A', 'A'],
+        once: (c) => {
+          c.call(0, 'A3:4 D4:12', 0.09);
+          c.call(4, 'A3:4 D4:6 F4:2 E4:4 -:4', 0.08);
+        },
+        bar: (c, i) => {
+          c.ostinato(i, 38, ALL16, 0.05, [0, 3, 6, 8, 11, 14]);
+          c.taiko(i, 0, 'o', 0.42);
+          c.taiko(i, 3, 'o', 0.25);
+          if (i % 2) {
+            c.taiko(i, 8, 'o', 0.32);
+            c.taiko(i, 11, 'm', 0.18);
+          }
+          c.tick(i, 4, 0.035);
+          c.tick(i, 12, 0.035);
+          c.choir(i, 1, 50, 'close', 0.05, 'o');
+          c.pad(i, 1, 69, 'power', 0.03, { tremolo: true, attack: 0.3 });
+          c.sub(i, 1, 0.15);
+        },
+      },
+      B: {
+        bars: 8,
+        chords: ['Dm', 'Dm', 'Bb', 'Bb', 'Gm', 'Gm', 'A', 'A'],
+        once: (c) => c.line('suona', mel('D5:4 F5:2 G5:2 Bb5:8 | A5:4 G5:4 D5:8'), 0.09, 0, 4, 0.15),
+        bar: (c, i) => {
+          if (i === 0) c.crash(0, 0.12);
+          c.ostinato(i, 38, ALL16, 0.06, [0, 3, 6, 8, 11, 14]);
+          c.ostinato(i, 50, GALLOP, 0.035);
+          c.taiko(i, 0, 'o', 0.48);
+          c.taiko(i, 3, 'o', 0.28);
+          c.taiko(i, 8, 'o', 0.36);
+          c.taiko(i, 11, 'm', 0.22);
+          c.brass(i, 0, 16, 50, 'open', 0.11, { swell: true, release: 0.3 });
+          c.pad(i, 1, 69, 'power', 0.035, { tremolo: true, attack: 0.2 });
+          c.sub(i, 1, 0.16);
+          if (i >= 6) c.roll(i, 0, 15, 'm', 0.12 + (i - 6) * 0.15, 0.27 + (i - 6) * 0.18);
+          if (i === 6) c.riser(6, 0, 32, 0.14);
+        },
+      },
+    },
+  },
+  // 交戰：律動 → 嗩吶主題 → 二胡間奏 → 主題再現
+  battle: {
+    bpm: 132,
+    rms: 0.15,
+    loop: ['A', 'B', 'A', 'C', 'B'],
+    sections: {
+      A: {
+        bars: 8,
+        chords: ['Dm', 'Dm', 'Bb', 'C', 'Dm', 'Dm', 'Bb', 'A'],
+        bar: (c, i) => {
+          if (i === 0) c.crash(0, 0.15);
+          c.taiko(i, 0, 'o', 0.6);
+          c.taiko(i, 8, 'o', 0.5);
+          if (i % 2 === 0) c.taiko(i, 10, 'o', 0.32);
+          c.taiko(i, 4, 'm', 0.38);
+          c.taiko(i, 12, 'm', 0.38);
+          for (let s = 0; s < 16; s++) c.taiko(i, s, 's', s % 4 === 2 ? 0.08 : 0.035);
+          if (i % 4 === 3) c.roll(i, 12, 15, 'm', 0.3, 0.45);
+          c.ostinato(i, 38, GALLOP, 0.1);
+          c.ostinato(i, 50, GALLOP, 0.055);
+          c.brass(i, 0, 5, 50, 'power', 0.13, { attack: 0.02, release: 0.15, drive: 2.2 });
+          c.pipa(i, 62, 0.07);
+          c.sub(i, 1, 0.15);
+        },
+      },
+      B: {
+        bars: 8,
+        chords: T_CHORDS,
+        once: (c) => {
+          c.line('suona', THEME, 0.15);
+          c.line('horns', THEME, 0.11, -1);
+        },
+        bar: (c, i) => {
+          if (i === 0) c.impact(0, 0.3);
+          if (i % 4 === 0) c.crash(i, 0.18);
+          c.taiko(i, 0, 'o', 0.6);
+          c.taiko(i, 8, 'o', 0.5);
+          if (i % 2 === 0) c.taiko(i, 10, 'o', 0.32);
+          c.taiko(i, 4, 'm', 0.36);
+          c.taiko(i, 12, 'm', 0.36);
+          for (let s = 0; s < 16; s++) c.taiko(i, s, 's', s % 4 === 2 ? 0.07 : 0.03);
+          if (i === 7) c.roll(7, 8, 15, 'm', 0.2, 0.5);
+          c.ostinato(i, 38, GALLOP, 0.09);
+          c.choir(i, 1, 57, 'close', 0.065, 'a');
+          c.pad(i, 1, 50, 'open', 0.06, { attack: 0.3 });
+          c.sub(i, 1, 0.15);
+        },
+      },
+      C: {
+        bars: 8,
+        chords: B_CHORDS,
+        once: (c) => c.line('erhu', THEME_B, 0.18),
+        bar: (c, i) => {
+          c.taiko(i, 0, 'o', 0.45);
+          c.taiko(i, 8, 'm', 0.3);
+          for (let s = 0; s < 16; s += 2) c.taiko(i, s, 's', 0.03);
+          c.pad(i, 1, 50, 'open', 0.09, { attack: 0.6 });
+          if (i < 6) c.pipaTremolo(i, 62, 0.04);
+          c.zheng(i, 62, 0.06);
+          c.sub(i, 1, 0.14);
+          if (i >= 4) c.choir(i, 1, 50, 'close', 0.06, 'o');
+          if (i >= 6) c.roll(i, 0, 15, 'm', 0.12 + (i - 6) * 0.16, 0.28 + (i - 6) * 0.2);
+          if (i === 6) c.riser(6, 0, 32, 0.17);
+        },
+      },
+    },
+  },
+  // 決戰：3-3-2 重鼓、號角＋嗩吶齊奏主題、合唱、重擊銅管
+  climax: {
+    bpm: 148,
+    rms: 0.18,
+    loop: ['A', 'B'],
+    sections: {
+      A: {
+        bars: 8,
+        chords: T_CHORDS,
+        once: (c) => {
+          c.line('horns', THEME, 0.15, -1);
+          c.line('suona', THEME, 0.13);
+        },
+        bar: (c, i) => {
+          if (i === 0) c.impact(0, 0.32);
+          if (i % 4 === 0) c.braam(i, 14, 0.12);
+          if (i % 2 === 0) c.crash(i, 0.15);
+          const big: Array<[number, number]> = [
+            [0, 0.58],
+            [3, 0.36],
+            [6, 0.42],
+            [8, 0.52],
+            [11, 0.36],
+            [14, 0.42],
+          ];
+          for (const [s, g] of big) c.taiko(i, s, 'o', g);
+          c.taiko(i, 4, 'm', 0.3);
+          c.taiko(i, 12, 'm', 0.3);
+          for (let s = 0; s < 16; s++) c.taiko(i, s, 's', s % 2 ? 0.035 : 0.075);
+          if (i === 7) c.roll(7, 8, 15, 's', 0.08, 0.25);
+          c.ostinato(i, 38, ALL16, 0.085, [0, 3, 6, 8, 11, 14]);
+          c.ostinato(i, 50, ALL16, 0.05, [0, 3, 6, 8, 11, 14]);
+          c.choir(i, 1, 57, 'power', 0.08, 'a');
+          c.pad(i, 1, 62, 'open', 0.045);
+          c.sub(i, 1, 0.16);
+        },
+      },
+      B: {
+        bars: 8,
+        chords: B_CHORDS,
+        once: (c) => {
+          c.line('horns', THEME_B, 0.15, -1);
+          c.line('suona', THEME_B, 0.12);
+        },
+        bar: (c, i) => {
+          if (i % 4 === 0) c.braam(i, 14, 0.13);
+          if (i % 2 === 0) c.crash(i, 0.15);
+          for (const [s, g] of [
+            [0, 0.58],
+            [3, 0.36],
+            [6, 0.42],
+            [8, 0.52],
+            [11, 0.36],
+            [14, 0.42],
+          ] as Array<[number, number]>)
+            c.taiko(i, s, 'o', g);
+          c.taiko(i, 4, 'm', 0.3);
+          c.taiko(i, 12, 'm', 0.3);
+          for (let s = 0; s < 16; s++) c.taiko(i, s, 's', s % 2 ? 0.035 : 0.075);
+          c.ostinato(i, 38, ALL16, 0.085, [0, 3, 6, 8, 11, 14]);
+          c.pad(i, 1, 69, 'close', 0.045, { tremolo: true, attack: 0.15 });
+          c.choir(i, 1, 57, 'power', 0.075, 'a');
+          c.sub(i, 1, 0.16);
+          if (i >= 6) for (let s = 0; s < 16; s += 2) c.taiko(i, s, 'o', 0.25 + (i - 6) * 0.1 + s * 0.008);
+          if (i === 6) c.riser(6, 0, 32, 0.18);
+        },
+      },
+    },
+  },
+  // 凱旋：號角開場 → 大調主題（笛子＋號角）、行進鼓
+  victory: {
+    bpm: 96,
+    rms: 0.13,
+    intro: 'F',
+    loop: ['V'],
+    sections: {
+      F: {
+        bars: 4,
+        chords: ['F', 'Bb', 'C', 'F'],
+        once: (c) => c.line('horns', FANFARE, 0.2),
+        bar: (c, i) => {
+          if (i === 0) {
+            c.impact(0, 0.35);
+            c.gong(0, 0.16);
+          }
+          c.brass(i, 0, 16, 53, 'open', 0.07, { attack: 0.25 });
+          c.taiko(i, 0, 'o', 0.5);
+          c.taiko(i, 8, 'm', 0.3);
+          c.sub(i, 1, 0.14);
+          if (i === 2) c.roll(2, 8, 15, 'm', 0.15, 0.45);
+          if (i === 3) {
+            c.crash(3, 0.2);
+            c.choir(3, 1, 57, 'close', 0.09, 'a');
+            c.pad(3, 1, 53, 'open', 0.08);
+          }
+        },
+      },
+      V: {
+        bars: 8,
+        chords: ['F', 'Dm', 'Bb', 'C', 'F', 'Dm', 'C', 'F'],
+        once: (c) => {
+          c.line('dizi', V_THEME, 0.15, 0, 0, 0.1);
+          c.line('horns', V_THEME, 0.09, -1);
+        },
+        bar: (c, i) => {
+          if (i === 0) c.crash(0, 0.15);
+          c.taiko(i, 0, 'o', 0.45);
+          c.taiko(i, 4, 'm', 0.2);
+          c.taiko(i, 8, 'o', 0.35);
+          c.taiko(i, 12, 'm', 0.25);
+          for (let s = 0; s < 16; s += 2) c.taiko(i, s, 's', 0.04);
+          c.pulse(i, 53, 0.055);
+          c.choir(i, 1, 60, 'close', 0.055, 'a');
+          c.zheng(i, 65, 0.06, true);
+          c.sub(i, 1, 0.14);
+          if (i === 7) c.roll(7, 12, 15, 'm', 0.2, 0.4);
+        },
+      },
+    },
+  },
+  // 敗北：二胡輓歌、低沉弦樂與合唱、遠方喪鼓
+  defeat: {
+    bpm: 58,
+    rms: 0.1,
+    loop: ['D'],
+    sections: {
+      D: {
+        bars: 8,
+        chords: ['Dm', 'Bb', 'Gm', 'A', 'Dm', 'Gm', 'A', 'Dm'],
+        once: (c) => c.line('erhu', LAMENT, 0.2),
+        bar: (c, i) => {
+          c.pad(i, 1, 50, 'open', 0.1, { attack: 1.2, release: 1.6 });
+          c.choir(i, 1, 50, 'close', 0.055, 'o');
+          c.sub(i, 1, 0.12);
+          if (i % 4 === 0) c.taiko(i, 0, 'o', 0.3);
+          if (i === 0) c.gong(0, 0.08);
+          pluckRoot(c, i);
+        },
+      },
+    },
+  },
+};
+
+function pluckRoot(c: Comp, i: number): void {
+  const v = voice(c.ch(i), 62, 'close');
+  pluck(c.k, c.bus.pluck, c.t(i, 0), mtof(v[0]), 0.1, 'zheng', 0.01);
+  pluck(c.k, c.bus.pluck, c.t(i, 8), mtof(v[2]), 0.07, 'zheng', 0.008);
+}
+
+/** 每個曲目接下來可能用到的曲目（預先渲染） */
+const NEXT: Record<PlayMode, PlayMode[]> = {
+  menu: ['deploy'],
+  deploy: ['battle'],
+  battle: ['climax', 'victory', 'defeat'],
+  climax: ['battle', 'victory', 'defeat'],
+  victory: ['menu'],
+  defeat: ['menu'],
+};
+
+// ─────────────────────────────────────────── 預渲染
+
+const yieldMain = (): Promise<void> => new Promise((res) => setTimeout(res, 0));
+
+async function renderSection(base: Kit, cue: Cue, sec: Section): Promise<AudioBuffer | null> {
+  const OAC: typeof OfflineAudioContext | undefined =
+    typeof OfflineAudioContext !== 'undefined'
+      ? OfflineAudioContext
+      : (globalThis as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+  if (!OAC) return null;
+  const step = 60 / cue.bpm / 4;
+  const len = PRE + sec.bars * 16 * step + TAIL;
+  let off: OfflineAudioContext;
+  try {
+    off = new OAC(2, Math.ceil(RENDER_SR * len), RENDER_SR);
+  } catch {
+    const sr = base.ctx.sampleRate;
+    off = new OAC(2, Math.ceil(sr * len), sr);
+  }
+  const k: Kit = { ...base, ctx: off };
+  // 總線：各聲部 → 混音 → 壓縮 → 輸出；殘響（大廳）
+  const mix = gainNode(off, 1);
+  const comp = off.createDynamicsCompressor();
+  comp.threshold.value = -14;
+  comp.knee.value = 8;
+  comp.ratio.value = 3;
+  comp.attack.value = 0.01;
+  comp.release.value = 0.25;
+  mix.connect(biquad(off, 'highpass', 28, 0.7)).connect(comp).connect(off.destination);
+  const hall = off.createConvolver();
+  hall.buffer = makeImpulse(off, 3.4, 3);
+  const hallIn = gainNode(off, 1);
+  hallIn.connect(biquad(off, 'highpass', 180, 0.7)).connect(hall).connect(gainNode(off, 0.55)).connect(mix);
+  const c = new Comp(k, step, sec.chords, mix, hallIn);
+  sec.once?.(c);
+  for (let i = 0; i < sec.bars; i++) {
+    sec.bar(c, i);
+    await yieldMain();
+  }
+  const buf = await off.startRendering();
+  // 響度部分對齊：太小聲的段落拉高、太大聲的壓低（只修正一半，保留段落間的起伏）；峰值不超過 0.95
+  let sum = 0;
+  let peak = 1e-6;
+  const n = buf.length;
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < n; i += 4) {
+      const v = d[i];
+      sum += v * v;
+      const a = v < 0 ? -v : v;
+      if (a > peak) peak = a;
+    }
+  }
+  const rms = Math.sqrt(sum / ((n / 4) * buf.numberOfChannels)) || 1e-6;
+  let g = Math.pow(cue.rms / rms, 0.5);
+  g = Math.min(Math.max(g, 0.3), 4, 0.95 / peak);
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < n; i++) d[i] *= g;
+  }
+  return buf;
+}
+
+// ─────────────────────────────────────────── 播放
 
 class Player {
   readonly out: GainNode;
   readonly wet: GainNode;
-  readonly inst: GainNode;
-  readonly pluckBus: AudioNode;
-  readonly drumBus: AudioNode;
-  readonly riff: number[];
-  nextBar: number;
-  barIdx = 0;
+  private seq = 0;
+  nextT = -1;
   stopAt = Infinity;
   deadAt = Infinity;
-  private motif: Note[] = [];
-  private shift = 0;
-  private phraseOn = true;
-  private lastMel = 0;
+  private sources: AudioBufferSourceNode[] = [];
 
   constructor(
-    readonly kit: Kit,
-    readonly style: Style,
+    private ctx: BaseAudioContext,
+    readonly mode: PlayMode,
+    private cue: Cue,
     dry: AudioNode,
     wetOut: AudioNode,
-    t: number,
-    private bank: SoundBank | null,
+    private fadeIn: number,
   ) {
-    const c = kit.ctx;
-    this.out = gainNode(c, 0);
-    this.wet = gainNode(c, 0);
-    this.out.gain.setValueAtTime(0, t);
-    this.out.gain.linearRampToValueAtTime(style.gain, t + style.fadeIn);
-    this.wet.gain.setValueAtTime(0, t);
-    this.wet.gain.linearRampToValueAtTime(style.gain * style.wet, t + style.fadeIn);
-    this.inst = gainNode(c, 1);
-    this.inst.connect(this.out);
-    this.inst.connect(this.wet);
+    this.out = gainNode(ctx, 0);
+    this.wet = gainNode(ctx, 0);
     this.out.connect(dry);
     this.wet.connect(wetOut);
-    // 撥弦琴身共鳴＋柔化高頻
-    const body = biquad(c, 'peaking', 230, 1.2, 4);
-    body.connect(biquad(c, 'highshelf', 3500, 0.7, -3)).connect(this.inst);
-    this.pluckBus = body;
-    // 鼓組輕微飽和，更有份量
-    const ds = shaper(c, 1.3);
-    ds.connect(this.inst);
-    this.drumBus = ds;
-    this.nextBar = t;
-    const r = kit.rnd;
-    this.riff = [...pick(r, RIFFS), ...pick(r, RIFFS)];
   }
 
-  /** 播放打擊樂：有預渲染緩衝就用（音高微隨機），否則即時合成 */
-  hit(name: MusicHitId, t: number, gain: number, out: AudioNode): void {
-    const buf = this.bank?.get(name) ?? null;
+  /** 第 n 個要播的段落 */
+  private secAt(n: number): string {
+    const c = this.cue;
+    if (c.intro) return n === 0 ? c.intro : c.loop[(n - 1) % c.loop.length];
+    return c.loop[n % c.loop.length];
+  }
+
+  get upcoming(): string {
+    return this.secAt(this.seq);
+  }
+
+  schedule(now: number, get: (sec: string) => AudioBuffer | null): void {
+    if (now >= this.stopAt) return;
+    const id = this.secAt(this.seq);
+    const buf = get(id);
     if (!buf) {
-      MUSIC_HITS[name].live(this.kit, out, t, gain);
+      // 還沒渲染好：等，時間往後推
+      if (this.nextT >= 0 && this.nextT < now + 0.05) this.nextT = now + 0.1;
       return;
     }
-    const c = this.kit.ctx;
-    const s = c.createBufferSource();
+    if (this.nextT < 0) {
+      // 第一段：淡入
+      this.nextT = now + 0.15;
+      for (const [g, v] of [
+        [this.out, 1],
+        [this.wet, 0.12],
+      ] as const) {
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(v, now + 0.15 + this.fadeIn);
+      }
+    }
+    if (this.nextT - now > 1.2) return;
+    if (this.nextT < now) this.nextT = now + 0.05; // 分頁暫停後重新對齊
+    const s = this.ctx.createBufferSource();
     s.buffer = buf;
-    s.playbackRate.value = 0.97 + this.kit.rnd() * 0.06;
-    const g = gainNode(c, gain);
-    s.connect(g).connect(out);
+    s.connect(this.out);
+    s.connect(this.wet);
+    const at = this.nextT - PRE;
+    if (at >= now) s.start(at);
+    else s.start(now, now - at);
     s.onended = () => {
       s.disconnect();
-      g.disconnect();
+      this.sources = this.sources.filter((x) => x !== s);
     };
-    s.start(t);
-  }
-
-  schedule(now: number, horizon: number): void {
-    if (this.nextBar < now - 0.05) this.nextBar = now + 0.05; // 分頁暫停後重新對齊
-    let guard = 0;
-    while (this.nextBar < horizon && this.nextBar < this.stopAt && guard++ < 4) this.playBar();
-  }
-
-  private playBar(): void {
-    const st = this.style;
-    const step = 60 / st.bpm / 4;
-    const b = new Bar(this, this.nextBar, step, this.barIdx);
-    try {
-      st.bar(b);
-      this.melody(b);
-    } catch {
-      // 單小節失敗不影響後續
-    }
-    this.nextBar += step * 16;
-    this.barIdx++;
-  }
-
-  private melody(b: Bar): void {
-    const m = this.style.melody;
-    if (!m) return;
-    const r = this.kit.rnd;
-    const pb = b.i % 4;
-    const phrase = Math.floor(b.i / 4);
-    if (pb === 0) {
-      if (this.motif.length === 0 || (phrase % 2 === 0 && r() < 0.65)) this.motif = makeMotif(r, m);
-      this.shift = pick(r, [-1, 1, 2, 0, -2]);
-      this.phraseOn = !(m.skipFirst && phrase === 0) && r() >= (m.silent ?? 0);
-    }
-    if (!this.phraseOn) return;
-    const answer = pb >= 2;
-    const off = (pb % 2) * 16;
-    const notes = this.motif;
-    for (let j = 0; j < notes.length; j++) {
-      const n = notes[j];
-      if (n.s < off || n.s >= off + 16) continue;
-      let deg = n.deg;
-      let len = n.len;
-      if (answer) {
-        deg += this.shift;
-        if (j === notes.length - 1) {
-          deg = Math.round(deg / 5) * 5; // 句尾回到主音
-          len = 32 - n.s;
-        }
-      }
-      deg = clamp(deg, m.lo - 2, m.hi + 2);
-      const t = b.at(n.s - off);
-      const dur = len * b.step * 0.94;
-      const f = b.f(deg, m.oct);
-      if (m.inst === 'dizi') {
-        if (len >= 4 && r() < 0.3) flute(this.kit, this.inst, t - 0.07, b.f(deg + 1, m.oct), 0.07, m.gain * 0.7, 0); // 倚音
-        flute(this.kit, this.inst, t, f, dur, m.gain * (0.85 + 0.3 * r()));
-      } else {
-        bowed(this.kit, this.inst, t, f, dur, m.gain, this.lastMel > 0 && r() < 0.5 ? this.lastMel : 0);
-      }
-      this.lastMel = f;
-    }
+    this.sources.push(s);
+    const sec = this.cue.sections[id];
+    this.nextT += (sec.bars * 16 * 60) / this.cue.bpm / 4;
+    this.seq++;
   }
 
   fadeOut(now: number, sec: number): void {
@@ -468,11 +722,19 @@ class Player {
       g.gain.setValueAtTime(v, now);
       g.gain.linearRampToValueAtTime(0, now + sec);
     }
-    this.stopAt = now + sec;
+    this.stopAt = now;
     this.deadAt = now + sec + 0.2;
   }
 
   dispose(): void {
+    for (const s of this.sources) {
+      try {
+        s.stop();
+      } catch {
+        /* 已停止 */
+      }
+    }
+    this.sources = [];
     this.out.disconnect();
     this.wet.disconnect();
   }
@@ -483,16 +745,25 @@ class Player {
 export class Music {
   private players: Player[] = [];
   private mode: MusicMode = 'none';
+  /** 已渲染的段落：key＝「曲目/段落」 */
+  private ready = new Map<string, AudioBuffer>();
+  private pending = new Set<string>();
+  private busy = false;
 
   constructor(
     private kit: Kit,
     private dry: AudioNode,
     private wetOut: AudioNode,
-    private bank: SoundBank | null = null,
+    _bank: SoundBank | null = null,
   ) {}
 
   get current(): MusicMode {
     return this.mode;
+  }
+
+  /** 已渲染段落數（DEV 顯示用） */
+  get renderedCount(): number {
+    return this.ready.size;
   }
 
   setMode(mode: MusicMode, now: number): void {
@@ -500,11 +771,63 @@ export class Music {
     const quick = mode === 'victory' || mode === 'defeat' || this.mode === 'victory' || this.mode === 'defeat';
     this.mode = mode;
     for (const p of this.players) if (p.stopAt === Infinity) p.fadeOut(now, quick ? 1.2 : 2.5);
-    if (mode !== 'none') this.players.push(new Player(this.kit, STYLES[mode], this.dry, this.wetOut, now + 0.12, this.bank));
+    if (mode !== 'none') this.players.push(new Player(this.kit.ctx, mode, CUES[mode], this.dry, this.wetOut, quick ? 0.4 : 2));
+    this.evict();
+    void this.pump();
+  }
+
+  /** 需要的段落（依優先順序）：目前曲目先，接著是可能的下一首 */
+  private wanted(): string[] {
+    if (this.mode === 'none') return [];
+    const out: string[] = [];
+    const add = (m: PlayMode, all: boolean) => {
+      const c = CUES[m];
+      const order = [...(c.intro ? [c.intro] : []), ...c.loop];
+      for (const s of all ? order : order.slice(0, 1)) if (!out.includes(`${m}/${s}`)) out.push(`${m}/${s}`);
+    };
+    const cur = this.mode as PlayMode;
+    // 正在播的曲目：下一段最優先
+    const p = this.players.find((x) => x.mode === cur && x.stopAt === Infinity);
+    if (p) out.push(`${cur}/${p.upcoming}`);
+    add(cur, true);
+    for (const n of NEXT[cur]) add(n, false);
+    for (const n of NEXT[cur]) add(n, true);
+    return out;
+  }
+
+  /** 丟掉用不到的曲目，控制記憶體 */
+  private evict(): void {
+    const keep = new Set(this.wanted().map((k) => k.split('/')[0]));
+    for (const p of this.players) keep.add(p.mode);
+    for (const key of [...this.ready.keys()]) if (!keep.has(key.split('/')[0])) this.ready.delete(key);
+  }
+
+  /** 依序渲染需要的段落（一次一段，不搶 CPU） */
+  private async pump(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      for (;;) {
+        const key = this.wanted().find((k) => !this.ready.has(k) && !this.pending.has(k));
+        if (!key) break;
+        this.pending.add(key);
+        const [m, s] = key.split('/') as [PlayMode, string];
+        const cue = CUES[m];
+        try {
+          const buf = await renderSection(this.kit, cue, cue.sections[s]);
+          if (buf) this.ready.set(key, buf);
+        } catch {
+          // 單段失敗：略過
+        }
+        this.pending.delete(key);
+        await yieldMain();
+      }
+    } finally {
+      this.busy = false;
+    }
   }
 
   tick(now: number): void {
-    const horizon = now + 0.35;
     this.players = this.players.filter((p) => {
       if (now > p.deadAt) {
         p.dispose();
@@ -512,11 +835,12 @@ export class Music {
       }
       return true;
     });
-    for (const p of this.players) p.schedule(now, horizon);
+    for (const p of this.players) p.schedule(now, (sec) => this.ready.get(`${p.mode}/${sec}`) ?? null);
   }
 
   dispose(): void {
     for (const p of this.players) p.dispose();
     this.players = [];
+    this.ready.clear();
   }
 }
