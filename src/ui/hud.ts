@@ -502,6 +502,7 @@ export class Hud {
     if (tr.wet) terr.push('🌊 涉水（受傷 +25%）');
     if (tr.camp) terr.push('🏯 營寨（受傷 −25%）');
     if (tr.road) terr.push('🛣 道路');
+    if (r.inSupply) terr.push('📦 本陣補給（補箭、體力回復 ×1.5）');
     const ammo = r.ranged ? r.members.reduce((a, i) => a + w.s.ammo[i], 0) / Math.max(1, r.members.length) : -1;
     const forms: Record<string, string> = { line: '橫陣', square: '方陣', wedge: '鋒矢', loose: '散陣' };
     const BUFF: Record<string, string> = { drums: '擂鼓', march: '急行軍', gong: '鳴金', berserk: '裸衣', terror: '威震', swift: '巧變', steady: '剛烈', unstoppable: '七進七出', fortify: '堅守', raid: '劫營', fury: '奮戰' };

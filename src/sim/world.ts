@@ -445,6 +445,7 @@ export class World {
     if (this.tick % 3 === 0) this.stepMorale(dt * 3);
     if (this.tick % 30 === 0) {
       this.stepSupply(1);
+      this.stepResupply();
       if (this.started) {
         this.stepStructures(1);
         this.stepCommand(1);
@@ -585,7 +586,7 @@ export class World {
     let ds = 0;
     if (r.engagedWith.size > 0) ds -= RULES.staminaFight;
     else if (moving) ds -= wantRun ? (r.unit.mounted ? (charging ? RULES.staminaCharge : RULES.staminaRunCav) : RULES.staminaRun) : RULES.staminaWalk;
-    else ds += RULES.staminaRest * SUPPLY_EFFECTS[this.teams[r.team].supply].stamina;
+    else ds += RULES.staminaRest * SUPPLY_EFFECTS[this.teams[r.team].supply].stamina * (r.inSupply ? 1.5 : 1);
     if (tireless && ds < 0) ds = 0;
     r.stamina = Math.max(0, Math.min(100, r.stamina + ds * dt));
   }
@@ -1450,6 +1451,22 @@ export class World {
           }
         }
       }
+    }
+  }
+
+  /** 本陣補給範圍：補箭（每秒約三成士兵補一輪）、體力回復 ×1.5；斷糧時不補 */
+  private stepResupply(): void {
+    for (const r of this.regs) {
+      r.inSupply = false;
+      if (r.gone || r.routing) continue;
+      const team = this.teams[r.team];
+      const hq = team.hq;
+      if (!hq || hq.burnt || team.supply === 'starving') continue;
+      if (Math.hypot(r.mx - hq.x, r.mz - hq.z) > RULES.supplyRadius) continue;
+      r.inSupply = true;
+      const rd = r.unit.ranged;
+      if (!rd || r.engagedWith.size > 0) continue;
+      for (const i of r.members) if (this.s.ammo[i] < rd.ammo && this.rng() < 0.3) this.s.ammo[i]++;
     }
   }
 

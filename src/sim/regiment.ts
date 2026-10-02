@@ -109,6 +109,8 @@ export class Regiment {
   fled = 0;
   /** 戰功：斬敵數 */
   kills = 0;
+  /** 在己方本陣補給範圍內（補箭、體力回復加快） */
+  inSupply = false;
   ai: { role: AiRole; anchorX: number; anchorZ: number; waitUntil: number; homeX: number; homeZ: number; targetT: number } = {
     role: 'line',
     anchorX: 0,
