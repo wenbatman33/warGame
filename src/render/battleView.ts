@@ -14,7 +14,7 @@ import { ArrowRenderer } from './arrows';
 import { Banners } from './banners';
 import { Overlays } from './overlays';
 import { Particles } from './particles';
-import { SoldierRenderer } from './soldiers';
+import { LOD, SoldierRenderer } from './soldiers';
 import { LIGHT, Stage, type Quality } from './stage';
 import { buildTerrainMesh, heightTexture, trample } from './terrain';
 import { buildVegetation, windTime } from './vegetation';
@@ -45,6 +45,36 @@ export class BattleView {
   private trampleTex: THREE.DataTexture;
   private trampleT = 0;
   private readonly TR = 256;
+  /** 自動畫質：逐級降低（0＝原設定） */
+  perfLevel = 0;
+  degrade(): string | null {
+    const st = this.stage;
+    this.perfLevel++;
+    if (this.perfLevel === 1) {
+      st.renderer.setPixelRatio(1);
+      st.resize();
+      return '解析度';
+    }
+    if (this.perfLevel === 2) {
+      st.scene.traverse((o) => {
+        if (o.userData.grass) o.visible = false;
+      });
+      LOD.dist = 35;
+      return '草叢與近景細節';
+    }
+    if (this.perfLevel === 3) {
+      st.renderer.shadowMap.enabled = false;
+      st.sun.castShadow = false;
+      st.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        if (!m) return;
+        for (const mm of Array.isArray(m) ? m : [m]) mm.needsUpdate = true;
+      });
+      return '陰影';
+    }
+    return null;
+  }
+
   /** 渲染用遊戲時間（含插值） */
   rt = 0;
 
@@ -56,6 +86,7 @@ export class BattleView {
     this.stage = new Stage(container, quality);
     const sc = world.sc;
     this.stage.setTimeOfDay(sc.time ?? 'day');
+    LOD.dist = 60;
     waterTint.value = sc.time === 'night' ? 0.38 : sc.time === 'dusk' ? 0.85 : 1;
     // 火光：最多 4 盞點光源跟著燃燒中的營寨
     for (let k = 0; k < 4; k++) {

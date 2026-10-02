@@ -48,6 +48,10 @@ export class Battle {
   private introT = 0;
   /** 跟隨中的軍團（-1＝無） */
   follow = -1;
+  /** 自動畫質：統計最近的幀時間 */
+  private perfAcc = 0;
+  private perfFrames = 0;
+  private perfSlow = 0;
 
   readonly sc: Scenario;
 
@@ -194,6 +198,23 @@ export class Battle {
     this.hud.refreshTime();
   }
 
+  /** 自動畫質：連續 6 秒平均低於 30 fps 就降一級 */
+  private autoQuality(dt: number): void {
+    if (document.hidden) return;
+    this.perfAcc += dt;
+    this.perfFrames++;
+    if (this.perfAcc < 2) return;
+    const fps = this.perfFrames / this.perfAcc;
+    this.perfAcc = 0;
+    this.perfFrames = 0;
+    this.perfSlow = fps < 30 ? this.perfSlow + 1 : 0;
+    if (this.perfSlow >= 3) {
+      this.perfSlow = 0;
+      const what = this.view.degrade();
+      if (what) this.hud.toast(`幀率偏低，已自動降低${what}`, 'info', true);
+    }
+  }
+
   /** 遠景：士兵放大、隊伍色更亮（大軍像一塊塊色塊，參考 Frost & Flame） */
   private updateLook(): void {
     const f = Math.min(1, Math.max(0, (this.cam.dist - 80) / 300));
@@ -274,6 +295,7 @@ export class Battle {
     this.view.render(alpha, this.paused ? 0 : raw * this.speed, this.paused);
     this.view.stage.render();
     this.hud.update(raw);
+    this.autoQuality(raw);
     audio.setListener(this.cam.target.x, this.cam.target.z, this.cam.dist);
     this.ambience();
   }

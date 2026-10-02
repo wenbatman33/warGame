@@ -35,7 +35,7 @@ function swayMaterial(amp: number, rough = 0.85): THREE.MeshStandardMaterial {
 }
 
 /** 依區塊建立實例化網格 */
-function chunked(geo: THREE.BufferGeometry, mat: THREE.Material, items: THREE.Matrix4[], chunk: number, shadow: boolean, group: THREE.Group): void {
+function chunked(geo: THREE.BufferGeometry, mat: THREE.Material, items: THREE.Matrix4[], chunk: number, shadow: boolean, group: THREE.Group, tag = ''): void {
   const buckets = new Map<string, THREE.Matrix4[]>();
   const p = new THREE.Vector3();
   for (const m of items) {
@@ -50,6 +50,7 @@ function chunked(geo: THREE.BufferGeometry, mat: THREE.Material, items: THREE.Ma
     list.forEach((m, i) => im.setMatrixAt(i, m));
     im.castShadow = shadow;
     im.receiveShadow = true;
+    if (tag) im.userData[tag] = true;
     im.computeBoundingSphere();
     group.add(im);
   }
@@ -136,7 +137,7 @@ export function buildVegetation(hf: Heightfield, seed: number, geos: VegetationG
       m.compose(v.set(x, h - 0.05, z), q.setFromEuler(e), sc.set(s, s * (0.8 + rng() * 0.6), s));
       lists[rng() < 0.85 || lists.length === 1 ? 0 : 1].push(m.clone());
     }
-    geos.grass.forEach((g, k) => chunked(g, grassMat, lists[k], 100, false, group));
+    geos.grass.forEach((g, k) => chunked(g, grassMat, lists[k], 100, false, group, 'grass'));
   }
   return { group, trees };
 }
