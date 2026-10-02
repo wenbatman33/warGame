@@ -194,3 +194,5 @@ body.picking canvas { cursor: crosshair; }
 .card.allbtn { width: 46px; background: linear-gradient(#8a8278, #56504a); }
 .card.allbtn .ico { font-size: 22px; top: 12px; }
 .card.allbtn .nm { top: 52px; }
+
+.cmdbar .btn.formation { background: linear-gradient(#5a7fd0, #2d4f99); }

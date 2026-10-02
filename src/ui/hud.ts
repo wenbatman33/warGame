@@ -12,6 +12,7 @@ import { terrainBase, terrainView } from '../render/terrain';
 import type { Regiment } from '../sim/regiment';
 import type { GameEvent } from '../sim/world';
 import { SETTINGS } from '../game/settings';
+import { ARMY_FORMATIONS, planArmyFormation, type ArmyFormation } from '../game/armyFormation';
 import { applyLayout, LAYOUT } from './layout';
 import { Minimap } from './minimap';
 
@@ -522,6 +523,13 @@ export class Hud {
       ['loose', '散陣', '受箭傷 −40%、近戰防禦 −20%'],
     ];
     for (const [f, nm, tip] of forms) btn(nm, `${nm}：${tip}（T 切換）`, all((r) => r.formation === f), () => w.setFormation(ids, f));
+    // 陣法（三團以上）
+    if (regs.length >= 3) {
+      bar.appendChild(el('div', 'sep'));
+      for (const [k, d] of Object.entries(ARMY_FORMATIONS) as [ArmyFormation, { name: string; desc: string }][]) {
+        btn(`🏯 ${d.name}`, `陣法・${d.name}：${d.desc}`, false, () => this.applyArmyFormation(ids, k), 'formation');
+      }
+    }
     if (regs.some((r) => r.ranged)) {
       bar.appendChild(el('div', 'sep'));
       btn('🎯 自由射擊', '自動射擊射程內最近的敵軍（F）', all((r) => !r.ranged || r.fireAtWill), () => {
@@ -558,6 +566,19 @@ export class Hud {
       bar.appendChild(el('div', 'sep'));
       btn('☑ 多選', '點卡片／旗號加入選取', this.b.controls.multiSelect, () => (this.b.controls.multiSelect = !this.b.controls.multiSelect));
     }
+  }
+
+  /** 套用陣法：部署階段直接就位，開戰後下移動令 */
+  private applyArmyFormation(ids: number[], f: ArmyFormation): void {
+    const b = this.b;
+    const plan = planArmyFormation(b.world, ids, f);
+    for (const p of plan) {
+      if (b.phase === 'deploy') b.deployPlace(p.id, p.x, p.z, p.facing, p.width);
+      else b.world.commandMove([p.id], p.x, p.z, p.facing, p.width);
+    }
+    this.toast(`列${ARMY_FORMATIONS[f].name}！`, 'gold', true);
+    audio.play('drum_boost');
+    b.world.flags.did_line = true;
   }
 
   private updateAbilityCd(): void {
@@ -877,6 +898,8 @@ export class Hud {
     this.slowAcc = 0;
     this.slowT++;
     this.deployEl.style.display = b.phase === 'deploy' ? '' : 'none';
+    // 指令列出現時，部署面板往上讓位
+    if (b.phase === 'deploy') this.deployEl.style.bottom = this.cmdbar.style.display === 'none' ? '' : `${110 + this.cmdbar.offsetHeight + 6}px`;
     const el2 = w.t - ((w.flags.startT as number) ?? w.t);
     this.clockEl.textContent = b.phase === 'deploy' ? '部署中' : `${Math.floor(el2 / 60)}:${String(Math.floor(el2 % 60)).padStart(2, '0')}${b.sc.holdTime ? ` / ${Math.floor(b.sc.holdTime / 60)}:00` : ''}`;
     const m0 = w.armyMorale(0);
