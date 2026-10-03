@@ -1,6 +1,7 @@
 // 一場戰役的總管：模擬步進、渲染、操作、HUD、AI、時間控制（暫停／變速）
 import { audio } from '../audio/audio';
 import { AiCommander } from '../ai/commander';
+import { PlayerTactics } from './tactics';
 import type { Scenario } from '../data/scenario';
 import { RtsCamera } from '../input/camera';
 import { Controls } from '../input/controls';
@@ -35,6 +36,8 @@ export class Battle {
   readonly controls: Controls;
   readonly hud: Hud;
   readonly ai: AiCommander[] = [];
+  /** 玩家的戰線指令（整組戰術） */
+  tactics!: PlayerTactics;
   paused = false;
   speed = 1;
   phase: 'deploy' | 'battle' | 'end' = 'deploy';
@@ -85,7 +88,11 @@ export class Battle {
     this.controls = new Controls(this.world, this.cam, this.view.stage.camera, this.view.stage.renderer.domElement, {
       onPause: () => this.togglePause(),
       onSpeed: (s) => this.setSpeed(s),
-      onOrder: (kind) => {
+      onOrder: (kind, ids) => {
+        // 手動下令：這些部隊回到逐團操作（取消戰線指令）
+        for (const id of ids) if (this.world.regs[id]) this.world.regs[id].stance = 'free';
+        this.hud?.refreshSelection();
+        if (kind === 'halt') return;
         // 教學關用的操作旗標
         this.world.flags[`did_${kind}`] = true;
         audio.play('ui_order');
@@ -105,6 +112,7 @@ export class Battle {
       onDeployPlace: (id, x, z, f, wd) => this.deployPlace(id, x, z, f, wd),
       onKey: (k, e) => this.hud.onKey(k, e),
     });
+    this.tactics = new PlayerTactics(this.world, this.world.player);
     this.hud = new Hud(container, this);
     for (let t = 0; t < sc.teams.length; t++) {
       if (t !== this.world.player && sc.teams[t].ai) this.ai.push(new AiCommander(this.world, t, sc.teams[t].ai!, opts.difficulty));
@@ -179,6 +187,8 @@ export class Battle {
     this.world.started = true;
     this.world.flags.startT = this.world.t;
     this.sc.onStart?.(this.world);
+    this.tactics.assignGroups();
+    this.hud.refreshGroups();
     // 部署時拉的戰線：已經在位置上，直接當作待命
     audio.play('drum_start');
     audio.voice('battle_start');
@@ -240,7 +250,10 @@ export class Battle {
     const n = Math.round(seconds / TICK);
     for (let k = 0; k < n; k++) {
       w.step();
-      if (this.phase === 'battle') for (const ai of this.ai) ai.update();
+      if (this.phase === 'battle') {
+        for (const ai of this.ai) ai.update();
+        this.tactics.update();
+      }
       this.handleEvents(w.events);
       this.view.consumeEvents(w.events);
       w.events = [];
@@ -265,7 +278,10 @@ export class Battle {
     let steps = 0;
     while (this.acc >= TICK && steps < 8) {
       w.step();
-      if (this.phase === 'battle') for (const ai of this.ai) ai.update();
+      if (this.phase === 'battle') {
+        for (const ai of this.ai) ai.update();
+        this.tactics.update();
+      }
       this.acc -= TICK;
       steps++;
       this.handleEvents(w.events);

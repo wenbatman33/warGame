@@ -7,7 +7,7 @@ import type { World } from '../sim/world';
 import { CAM, RtsCamera } from './camera';
 
 export interface ControlHooks {
-  onOrder?: (kind: 'move' | 'attack' | 'struct' | 'line', ids: number[]) => void;
+  onOrder?: (kind: 'move' | 'attack' | 'struct' | 'line' | 'halt', ids: number[]) => void;
   onSelect?: (ids: number[]) => void;
   /** 計策／技能等待選目標時攔截點擊（回傳 true 表示已處理） */
   onTargetPick?: (x: number, z: number) => boolean;
@@ -570,7 +570,10 @@ export class Controls {
         this.groups[n] = [...this.selected];
       } else if (this.groups[n].length) this.select(this.groups[n].filter((id) => !w.regs[id].gone));
       else if (n >= 1 && n <= 3 && !this.groups[n].length) this.hooks.onSpeed?.([0.5, 1, 2][n - 1]);
-    } else if (k === 'h') w.commandHalt(ids);
+    } else if (k === 'h') {
+      w.commandHalt(ids);
+      this.hooks.onOrder?.('halt', ids);
+    }
     else if (k === 'r') for (const id of ids) w.regs[id].run = !w.regs[id].run;
     else if (k === 'g') for (const id of ids) w.regs[id].hold = !w.regs[id].hold;
     else if (k === 'f') for (const id of ids) w.regs[id].fireAtWill = !w.regs[id].fireAtWill;
@@ -580,7 +583,10 @@ export class Controls {
         const r = w.regs[id];
         w.setFormation([id], order[(order.indexOf(r.formation) + 1) % order.length]);
       }
-    } else if (k === 'backspace') w.commandRetreat(ids);
+    } else if (k === 'backspace') {
+      w.commandRetreat(ids);
+      this.hooks.onOrder?.('halt', ids);
+    }
     else if (k === 'escape') this.select([]);
     else if (k === 'a' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();

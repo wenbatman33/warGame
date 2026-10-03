@@ -12,7 +12,10 @@ import { terrainBase, terrainView } from '../render/terrain';
 import type { Regiment } from '../sim/regiment';
 import type { GameEvent } from '../sim/world';
 import { SETTINGS } from '../game/settings';
-import { ARMY_FORMATIONS, planArmyFormation, type ArmyFormation } from '../game/armyFormation';
+import { GROUP_ORDER, GROUPS, STANCES } from '../game/tactics';
+import { counterMul } from '../sim/world';
+import type { UnitClass, UnitDef } from '../data/units';
+import type { GroupId, Stance } from '../sim/regiment';
 import { applyLayout, LAYOUT } from './layout';
 import { Minimap } from './minimap';
 
@@ -27,6 +30,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''):
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+
+/** 各兵種剋誰、怕誰（資訊面板用） */
+const CTR: Record<UnitClass, [string, string]> = {
+  shield: ['長槍（近身）', '騎兵側衝'],
+  pole: ['騎兵', '弓兵、刀盾'],
+  missile: ['長槍', '騎兵'],
+  cav: ['弓兵', '長槍'],
+};
 
 export class Hud {
   readonly root: HTMLDivElement;
@@ -63,6 +74,8 @@ export class Hud {
   /** 結算結果（觀戰後用 🚪 離開也會記錄） */
   private result: { scenario: string; win: boolean; stars: boolean[]; time: number } | null = null;
   private resultHtml = '';
+  private groupsEl!: HTMLDivElement;
+  private groupChips = new Map<GroupId, HTMLElement>();
   private cardFade: () => void = () => {};
 
   constructor(
@@ -231,6 +244,36 @@ export class Hud {
       strats.appendChild(s);
       this.stratEls.set(id, s);
     }
+    // 戰線分組：點一下選取整組；把卡片拖到分組上可換組
+    this.groupsEl = el('div', 'groups');
+    for (const g of GROUP_ORDER) {
+      const chip = el('div', 'gchip');
+      chip.style.setProperty('--gc', GROUPS[g].color);
+      chip.innerHTML = `<b class="stroke">${GROUPS[g].name}</b><span class="n stroke">0</span><span class="si"></span>`;
+      chip.title = `${GROUPS[g].name}：點一下選取整組、雙擊鏡頭跳過去；把下方卡片拖到這裡可以換組`;
+      chip.onclick = () => {
+        audio.unlock();
+        b.controls.select(w.regs.filter((r) => r.team === w.player && !r.gone && r.group === g).map((r) => r.id));
+      };
+      chip.ondblclick = () => {
+        const rs = w.regs.filter((r) => r.team === w.player && !r.gone && r.group === g);
+        if (rs.length) b.cam.set(rs.reduce((a, r) => a + r.mx, 0) / rs.length, rs.reduce((a, r) => a + r.mz, 0) / rs.length, undefined, undefined, false);
+      };
+      chip.ondragover = (e) => {
+        e.preventDefault();
+        chip.classList.add('drop');
+      };
+      chip.ondragleave = () => chip.classList.remove('drop');
+      chip.ondrop = (e) => {
+        e.preventDefault();
+        chip.classList.remove('drop');
+        const id = Number(e.dataTransfer?.getData('text/plain'));
+        const r = w.regs[id];
+        if (r && r.team === w.player) this.setGroup([id], g);
+      };
+      this.groupsEl.appendChild(chip);
+      this.groupChips.set(g, chip);
+    }
     const all = el('div', 'card allbtn', '<div class="ico">⚔</div><div class="nm stroke">全軍</div>');
     all.title = '選取全軍（Ctrl＋A）';
     all.onclick = () => {
@@ -238,7 +281,9 @@ export class Hud {
       b.controls.select(w.regs.filter((r) => r.team === w.player && !r.gone && !r.routing).map((r) => r.id));
     };
     this.cardsEl.prepend(all);
-    bottom.append(this.cardsEl, strats);
+    const left = el('div', 'bleft');
+    left.append(this.groupsEl, this.cardsEl);
+    bottom.append(left, strats);
     root.appendChild(bottom);
 
     // 部署面板
@@ -282,7 +327,9 @@ export class Hud {
 
   private addCard(r: Regiment): void {
     const c = el('div', 'card' + (r.general ? ' gen' : ''));
-    c.innerHTML = `<div class="ico">${this.iconOf(r)}</div><div class="nm stroke">${r.general ? r.general.name : r.name}</div><div class="num stroke"></div><div class="tags"></div><div class="mb"><i></i></div><div class="sb"><i></i></div>`;
+    c.innerHTML = `<div class="ico">${this.iconOf(r)}</div><div class="nm stroke">${r.general ? r.general.name : r.name}</div><div class="num stroke"></div><div class="tags"></div><div class="grp stroke"></div><div class="mb"><i></i></div><div class="sb"><i></i></div>`;
+    c.draggable = true;
+    c.ondragstart = (e) => e.dataTransfer?.setData('text/plain', String(r.id));
     c.title = `${r.name}（${r.unit.name}）：${r.unit.desc}`;
     let lastClick = 0;
     c.onclick = (e) => {
@@ -331,20 +378,58 @@ export class Hud {
   }
 
   /** 戰場即時警示：讓玩家看懂士氣為什麼在掉 */
-  private warnOf(r: Regiment): string {
+  /** 戰場即時效果字：讓玩家看懂這一團為什麼打得好／打得差（紅＝吃虧、綠＝佔便宜） */
+  private warnOf(r: Regiment): { t: string; good?: boolean } | null {
     const w = this.b.world;
-    if (r.routing) return '';
-    if (r.rearHits > 0) return '背襲！';
-    if (r.flankHits > 0) return '側擊！';
-    if (w.t - r.chargeShockT < 2.5) return '衝鋒！';
-    if (r.terrain.wet && r.engagedWith.size > 0) return '半渡！';
-    if (r.stamina < 25 && !r.unit.mounted) return '疲憊';
-    if (r.ranged && r.members.length && r.members.every((i) => w.s.ammo[i] <= 0)) return '箭盡';
+    const now = w.t;
+    if (r.routing) return null;
+    if (r.rearHits > 0) return { t: `背襲 ×${RULES.rearMul}` };
+    if (r.flankHits > 0) return { t: `側擊 ×${RULES.flankMul}` };
+    if (now - r.counterHitT < 2.5) return { t: `被剋 ×${+r.counterHitMul.toFixed(2)}` };
+    if (now - r.counterDealT < 2.5) return { t: `剋制 ×${+r.counterDealMul.toFixed(2)}`, good: true };
+    if (now - r.chargeShockT < 2.5) return { t: '衝鋒！' };
+    if (r.terrain.wet && r.engagedWith.size > 0) return { t: '半渡 受傷+25%' };
+    if (r.engagedWith.size > 0 && r.terrain.relHeight > 2) return { t: `居高 +${Math.round(Math.min(RULES.heightMax, r.terrain.relHeight * RULES.heightPerMeter) * 100)}%`, good: true };
+    if (r.engagedWith.size > 0 && r.terrain.relHeight < -5) return { t: '仰攻' };
     const sup = w.supplyOf(r);
-    if (sup === 'starving') return '斷糧';
-    if (sup === 'low') return '吃緊';
-    if (r.morale < RULES.brokenThreshold) return '瓦解';
+    if (sup === 'starving') return { t: '斷糧 受傷+35%' };
+    if (sup === 'low') return { t: '吃緊 受傷+15%' };
+    if (r.morale < RULES.brokenThreshold) return { t: '瓦解 受傷+20%' };
+    if (r.stamina < 25 && !r.unit.mounted) return { t: '疲憊' };
+    if (r.ranged && r.members.length && r.members.every((i) => w.s.ammo[i] <= 0)) return { t: '箭盡' };
+    return null;
+  }
+
+  /** 相剋提示：選取的我軍剋這個敵軍（good）或被它剋（bad） */
+  private counterHint(sel: UnitDef[], e: UnitDef): 'good' | 'bad' | '' {
+    const edge = (a: UnitDef, b: UnitDef) => Math.max(counterMul(a, b), a.ranged && b.cls === 'pole' ? RULES.missileVsPole : 1);
+    if (sel.some((u) => edge(u, e) > 1.1)) return 'good';
+    if (sel.some((u) => edge(e, u) > 1.1)) return 'bad';
     return '';
+  }
+
+  /** 把部隊換到某個分組 */
+  private setGroup(ids: number[], g: GroupId): void {
+    const w = this.b.world;
+    for (const id of ids) if (w.regs[id]?.team === w.player) w.regs[id].group = g;
+    this.toast(`編入${GROUPS[g].name}`, 'info', true);
+    this.refreshGroups();
+    this.refreshSelection();
+  }
+
+  /** 分組列：人數與共同姿態 */
+  refreshGroups(): void {
+    const w = this.b.world;
+    for (const g of GROUP_ORDER) {
+      const chip = this.groupChips.get(g);
+      if (!chip) continue;
+      const rs = w.regs.filter((r) => r.team === w.player && !r.gone && r.group === g);
+      (chip.querySelector('.n') as HTMLElement).textContent = String(rs.length);
+      const st = rs.length && rs.every((r) => r.stance === rs[0].stance) ? rs[0].stance : 'free';
+      (chip.querySelector('.si') as HTMLElement).textContent = st !== 'free' ? STANCES[st].icon : '';
+      chip.classList.toggle('empty', rs.length === 0);
+      chip.classList.toggle('sel', rs.length > 0 && rs.every((r) => this.b.controls.selected.has(r.id)));
+    }
   }
 
   private moraleColor(m: number): string {
@@ -366,6 +451,12 @@ export class Hud {
       mi.style.background = this.moraleColor(r.morale);
       (c.querySelector('.sb i') as HTMLElement).style.width = `${r.stamina}%`;
       (c.querySelector('.tags') as HTMLElement).textContent = r.gone ? '' : this.stateIcons(r);
+      const gEl = c.querySelector('.grp') as HTMLElement;
+      if (r.group && !r.gone) {
+        gEl.style.display = '';
+        gEl.style.background = GROUPS[r.group].color;
+        gEl.textContent = `${GROUPS[r.group].short}${r.stance !== 'free' ? STANCES[r.stance].icon : ''}`;
+      } else gEl.style.display = 'none';
       c.classList.toggle('sel', this.b.controls.selected.has(r.id));
       c.classList.toggle('rout', r.routing && !r.gone);
       c.classList.toggle('dead', r.gone);
@@ -425,6 +516,8 @@ export class Hud {
     const ctl = this.b.controls;
     this.updateStructBadges();
     const seen = new Set<number>();
+    // 選取的我軍兵種（相剋提示用）
+    const selUnits = [...new Set([...ctl.selected].map((id) => w.regs[id]).filter((r) => r && !r.gone && r.team === w.player).map((r) => r.unit))];
     for (const r of w.regs) {
       if (r.gone || r.name === '逃兵' || !w.isVisibleTo(r, w.player)) continue;
       const p = ctl.screenOf(r.mx, w.groundY(r.mx, r.mz) + (r.unit.mounted ? 7 : 5.5), r.mz);
@@ -461,14 +554,17 @@ export class Hud {
       }
       const enemy = r.team !== w.player;
       b.el.style.setProperty('--tc', FACTIONS[r.faction].color);
-      b.el.className = `badge${enemy ? ' enemy' : ''}${r.general ? ' gen' : ''}${ctl.selected.has(r.id) ? ' sel' : ''}${r.routing ? ' rout' : ''}`;
+      const ctr = enemy && selUnits.length ? this.counterHint(selUnits, r.unit) : '';
+      b.el.className = `badge${enemy ? ' enemy' : ''}${r.general ? ' gen' : ''}${ctl.selected.has(r.id) ? ' sel' : ''}${r.routing ? ' rout' : ''}${ctr ? ` ctr-${ctr}` : ''}`;
       b.el.style.transform = `translate(${(p.x - 14).toFixed(1)}px, ${(p.y - 14).toFixed(1)}px)`;
       b.el.style.display = '';
       b.num.textContent = fmt(r.alive * MEN_PER_SOLDIER);
       b.mb.style.width = `${r.morale}%`;
       b.mb.style.background = this.moraleColor(r.morale);
       b.st.textContent = this.stateIcons(r);
-      b.warn.textContent = this.warnOf(r);
+      const wn = this.warnOf(r);
+      b.warn.textContent = wn ? wn.t : '';
+      b.warn.className = `warn stroke${wn?.good ? ' good' : ''}`;
     }
     for (const [id, b] of this.badges) {
       if (!seen.has(id)) {
@@ -532,8 +628,10 @@ export class Hud {
     this.infoEl.className = `reginfo${r.team !== w.player ? ' enemy' : ''}`;
     this.infoEl.innerHTML = `<div class="hd"><b>${r.name}</b><span>${r.unit.name}</span></div>
       <div class="row"><span>兵力</span><b>${fmt(r.alive * MEN_PER_SOLDIER)}</b><small>／${fmt(r.initial * MEN_PER_SOLDIER)}</small></div>
+      <div class="row"><span>相剋</span><b style="color:#8fe36a">剋 ${CTR[r.unit.cls][0]}</b><small style="color:#ff9a8a">怕 ${CTR[r.unit.cls][1]}</small></div>
+      ${r.group ? `<div class="row"><span>分組</span><b style="color:${GROUPS[r.group].color}">${GROUPS[r.group].name}</b><small>${r.stance !== 'free' ? `${STANCES[r.stance].icon} ${STANCES[r.stance].name}` : '手動操作'}</small></div>` : ''}
       <div class="row"><span>士氣</span><b style="color:${stColor}">${Math.round(r.morale)} ${st}</b></div>
-      <div class="row"><span>體力</span><b>${Math.round(r.stamina)}</b>${r.stamina < 30 ? '<small style="color:#ffc24a">疲憊：攻防 −15%</small>' : ''}</div>
+      ${r.stamina < 30 ? `<div class="row"><span>體力</span><b>${Math.round(r.stamina)}</b><small style="color:#ffc24a">疲憊：攻防 −15%</small></div>` : ''}
       ${ammo >= 0 ? `<div class="row"><span>箭矢</span><b>${ammo.toFixed(0)}</b><small>輪</small></div>` : ''}
       <div class="row"><span>陣型</span><b>${forms[r.formation]}</b>${r.hold ? '<small>🛡 堅守</small>' : ''}${r.run ? '<small>🏃 奔跑</small>' : ''}</div>
       <div class="row"><span>糧況</span><b>${sup.icon}${sup.name}${outNote}</b>${supNote ? `<small style="color:#ffc24a">${supNote}</small>` : ''}${t.panicUntil > w.t ? '<small style="color:#ff6a55">😱 軍心大亂</small>' : ''}</div>
@@ -567,35 +665,50 @@ export class Hud {
       bar.appendChild(e);
       return e;
     };
+    // 戰線指令：整組戰術（開戰前也可以先設定）
+    const battle = this.b.phase === 'battle';
+    const stances: Exclude<Stance, 'free'>[] = battle ? ['hold', 'advance', 'retreat', 'flank'] : ['hold', 'advance', 'flank'];
+    for (const st of stances) {
+      const d = STANCES[st];
+      btn(`${d.icon} ${d.name}`, `戰線指令・${d.name}：${d.desc}（手動下令會取消）`, all((r) => r.stance === st), () => {
+        this.b.tactics.setStance(ids, st);
+        audio.voice(st === 'retreat' ? 'ack_retreat' : st === 'hold' ? 'ack_hold' : 'ack_charge');
+        this.toast(`${regs.length > 1 ? `${regs.length} 團` : regs[0].name}：${d.name}`, 'gold', true);
+        this.refreshGroups();
+      }, `stance st-${st}`);
+    }
+    // 分組
+    bar.appendChild(el('div', 'sep'));
+    for (const g of GROUP_ORDER) {
+      const e = btn(GROUPS[g].short, `編入${GROUPS[g].name}`, all((r) => r.group === g), () => this.setGroup(ids, g), 'grpbtn');
+      e.style.setProperty('--gc', GROUPS[g].color);
+    }
+    bar.appendChild(el('div', 'sep'));
     btn('🏃 奔跑', '奔跑移動：快 50%，消耗體力（R）', all((r) => r.run), () => {
       const v = !all((r) => r.run);
       for (const r of regs) r.run = v;
     });
-    btn('✋ 停止', '停止（H）', false, () => w.commandHalt(ids));
+    btn('✋ 停止', '停止（H）', false, () => {
+      w.commandHalt(ids);
+      for (const r of regs) r.stance = 'free';
+    });
     btn('🛡 堅守', '堅守：不追擊；長槍兵擺出拒馬陣，騎兵正面衝鋒反吃三倍傷害（G）', all((r) => r.hold), () => {
       const v = !all((r) => r.hold);
       for (const r of regs) r.hold = v;
       if (v) audio.voice('ack_hold');
     });
-    bar.appendChild(el('div', 'sep'));
-    const forms: [Regiment['formation'], string, string][] = [
-      ['line', '橫陣', '接觸面最大（預設）'],
-      ['square', '方陣', '側擊背襲懲罰減半、移動 −15%'],
-      ['wedge', '鋒矢', '騎兵衝鋒 +30%'],
-      ['loose', '散陣', '受箭傷 −40%、近戰防禦 −20%'],
-    ];
-    for (const [f, nm, tip] of forms) btn(nm, `${nm}：${tip}（T 切換）`, all((r) => r.formation === f), () => w.setFormation(ids, f));
-    // 全軍突擊（兩團以上、開戰後）
-    if (regs.length >= 2 && this.b.phase === 'battle') {
-      btn('⚔ 全軍突擊', '每團自動分配最近的敵軍進攻（目標盡量分散；弓弩射擊、騎兵衝鋒）', false, () => this.assault(ids), 'red');
-    }
-    // 陣法（三團以上）
-    if (regs.length >= 3) {
-      bar.appendChild(el('div', 'sep'));
-      for (const [k, d] of Object.entries(ARMY_FORMATIONS) as [ArmyFormation, { name: string; desc: string }][]) {
-        btn(`🏯 ${d.name}`, `陣法・${d.name}：${d.desc}`, false, () => this.applyArmyFormation(ids, k), 'formation');
-      }
-    }
+    const forms: Record<Regiment['formation'], [string, string]> = {
+      line: ['橫陣', '接觸面最大（預設）'],
+      square: ['方陣', '側擊背襲懲罰減半、移動 −15%'],
+      wedge: ['鋒矢', '騎兵衝鋒 +30%'],
+      loose: ['散陣', '受箭傷 −40%、近戰防禦 −20%'],
+    };
+    const order: Regiment['formation'][] = ['line', 'square', 'wedge', 'loose'];
+    const cur = regs[0].formation;
+    btn(`陣型：${forms[cur][0]} ▸`, `切換陣型（T）：${order.map((f) => `${forms[f][0]}＝${forms[f][1]}`).join('；')}`, false, () => {
+      const nx = order[(order.indexOf(cur) + 1) % order.length];
+      w.setFormation(ids, nx);
+    });
     if (regs.some((r) => r.ranged)) {
       bar.appendChild(el('div', 'sep'));
       btn('🎯 自由射擊', '自動射擊射程內最近的敵軍（F）', all((r) => !r.ranged || r.fireAtWill), () => {
@@ -608,8 +721,9 @@ export class Hud {
       });
     }
     bar.appendChild(el('div', 'sep'));
-    btn('↩ 撤退', '有序撤回本陣（Backspace）', false, () => {
+    btn('🏯 撤回本陣', '有序撤回本陣（Backspace）', false, () => {
       w.commandRetreat(ids);
+      for (const r of regs) r.stance = 'free';
       audio.voice('ack_retreat');
     }, 'red');
     for (const r of regs) {
@@ -632,48 +746,6 @@ export class Hud {
       bar.appendChild(el('div', 'sep'));
       btn('☑ 多選', '點卡片／旗號加入選取', this.b.controls.multiSelect, () => (this.b.controls.multiSelect = !this.b.controls.multiSelect));
     }
-  }
-
-  /** 全軍突擊：貪婪分配，每個敵軍團最多被兩團鎖定 */
-  private assault(ids: number[]): void {
-    const w = this.b.world;
-    const enemies = w.regs.filter((e) => e.team !== w.player && !e.gone && !e.routing && w.isVisibleTo(e, w.player));
-    if (!enemies.length) {
-      this.toast('看不到敵軍', 'info', true);
-      return;
-    }
-    const load = new Map<number, number>();
-    for (const id of ids) {
-      const r = w.regs[id];
-      if (r.gone || r.routing) continue;
-      let best = enemies[0];
-      let bs = Infinity;
-      for (const e of enemies) {
-        const d = Math.hypot(e.mx - r.mx, e.mz - r.mz) * (1 + (load.get(e.id) ?? 0) * 0.6);
-        if (d < bs) {
-          bs = d;
-          best = e;
-        }
-      }
-      load.set(best.id, (load.get(best.id) ?? 0) + 1);
-      w.commandAttack([r.id], best.id, r.unit.mounted || undefined);
-    }
-    audio.play('horn_charge');
-    audio.voice('ack_charge');
-    this.toast('全軍突擊！', 'gold', true);
-  }
-
-  /** 套用陣法：部署階段直接就位，開戰後下移動令 */
-  private applyArmyFormation(ids: number[], f: ArmyFormation): void {
-    const b = this.b;
-    const plan = planArmyFormation(b.world, ids, f);
-    for (const p of plan) {
-      if (b.phase === 'deploy') b.deployPlace(p.id, p.x, p.z, p.facing, p.width);
-      else b.world.commandMove([p.id], p.x, p.z, p.facing, p.width);
-    }
-    this.toast(`列${ARMY_FORMATIONS[f].name}！`, 'gold', true);
-    audio.play('drum_boost');
-    b.world.flags.did_line = true;
   }
 
   private updateAbilityCd(): void {
@@ -1063,7 +1135,7 @@ export class Hud {
     this.slowT++;
     this.deployEl.style.display = b.phase === 'deploy' ? '' : 'none';
     // 指令列出現時，部署面板往上讓位
-    if (b.phase === 'deploy') this.deployEl.style.bottom = this.cmdbar.style.display === 'none' ? '' : `${110 + this.cmdbar.offsetHeight + 6}px`;
+    if (b.phase === 'deploy') this.deployEl.style.bottom = this.cmdbar.style.display === 'none' ? '' : `${138 + this.cmdbar.offsetHeight + 6}px`;
     // 戰鬥結束後時鐘停住
     const el2 = (w.over ? (w.flags.endT as number) : w.t) - ((w.flags.startT as number) ?? w.t);
     const wxIcon = b.sc.weather === 'rain' ? '🌧 雨天・' : b.sc.weather === 'fog' ? '🌫 濃霧・' : '';
@@ -1092,6 +1164,7 @@ export class Hud {
       s.classList.toggle('pick', this.pending?.kind === 'strat' && this.pending.id === id);
     }
     this.updateCards();
+    this.refreshGroups();
     this.updateAbilityCd();
     this.updateInfo();
     if (this.slowT % 5 === 0) this.updateGoals();

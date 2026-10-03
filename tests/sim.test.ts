@@ -5,6 +5,7 @@ import { generateHeightfield } from '../src/map/mapgen';
 import { NavGrid } from '../src/map/nav';
 import { Regiment } from '../src/sim/regiment';
 import { World } from '../src/sim/world';
+import { PlayerTactics } from '../src/game/tactics';
 
 const flat = (extra: Partial<Scenario['map']> = {}): Scenario['map'] => ({ play: 400, seed: 1, noiseAmp: 0.2, ...extra });
 
@@ -231,4 +232,48 @@ describe('劇本', () => {
       expect(w.regs.filter((r) => r.team === 0).length).toBeGreaterThan(4);
     }, 30000);
   }
+});
+
+describe('戰線指令', () => {
+  it('自動分組：螢幕左右分翼、騎兵當奇兵', () => {
+    const sc = scenario(flat(), [{ type: 'sword', x: -40, z: 80 }, { type: 'sword', x: 40, z: 80 }, { type: 'archer', x: 0, z: 110 }, { type: 'cav', x: 90, z: 100 }], [{ type: 'sword', x: 0, z: -80 }]);
+    const w = new World(sc, generateHeightfield(sc.map));
+    const tac = new PlayerTactics(w, 0);
+    tac.assignGroups();
+    expect(w.regs.slice(0, 4).map((r) => r.group)).toEqual(['left', 'right', 'center', 'strike']);
+  });
+
+  it('包抄：騎兵繞到敵軍背後', () => {
+    const sc = scenario(flat(), [{ type: 'sword', x: 0, z: 25 }, { type: 'cav', x: 120, z: 60 }], [{ type: 'sword', x: 0, z: -25 }]);
+    const w = new World(sc, generateHeightfield(sc.map));
+    w.started = true;
+    const tac = new PlayerTactics(w, 0);
+    w.commandAttack([0], 2);
+    tac.setStance([1], 'flank');
+    let rear = 0;
+    for (let k = 0; k < 30 * 45 && !w.over; k++) {
+      w.step();
+      tac.update();
+      if (w.tick % 30 === 29) rear += w.regs[2].rearHits;
+      w.events = [];
+    }
+    expect(rear).toBeGreaterThan(20);
+  }, 30000);
+
+  it('固守：被側擊會轉向迎敵', () => {
+    const sc = scenario(flat(), [{ type: 'sword', x: 0, z: 0, facing: 180 }], [{ type: 'sword', x: 120, z: 0, facing: 270 }]);
+    const w = new World(sc, generateHeightfield(sc.map));
+    w.started = true;
+    const tac = new PlayerTactics(w, 0);
+    tac.setStance([0], 'hold');
+    w.commandAttack([1], 0);
+    for (let k = 0; k < 30 * 60 && !w.over; k++) {
+      w.step();
+      tac.update();
+      w.events = [];
+    }
+    // 敵軍從 +x 方向來：朝向轉到約 90°
+    const deg = (((w.regs[0].facing * 180) / Math.PI) % 360 + 360) % 360;
+    expect(Math.abs(deg - 90)).toBeLessThan(40);
+  }, 30000);
 });

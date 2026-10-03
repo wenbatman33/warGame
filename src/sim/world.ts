@@ -1023,7 +1023,12 @@ export class World {
       return;
     }
     let dmg = atk * RULES.meleeDmg * (0.8 + this.rng() * 0.4) * dirMul;
-    dmg *= counterMul(u, eu);
+    const cm = counterMul(u, eu);
+    if (cm > 1.05) {
+      er.counterHitT = r.counterDealT = t;
+      er.counterHitMul = r.counterDealMul = cm;
+    }
+    dmg *= cm;
     dmg *= this.moraleAtkMul(r) * SUPPLY_EFFECTS[this.supplyOf(r)].atk;
     if (this.teams[r.team].panicUntil > t) dmg *= RULES.panicAtk;
     dmg *= this.teamAtk[r.team];
@@ -1097,7 +1102,11 @@ export class World {
       let dmg = r.unit.charge * 2.2 * mul * (0.8 + this.rng() * 0.4) * this.teamAtk[r.team];
       if (er.unit.mounted) dmg *= 0.6;
       // 騎兵衝進弓弩陣：相剋
-      if (er.unit.cls === 'missile') dmg *= RULES.chargeVsMissile;
+      if (er.unit.cls === 'missile') {
+        dmg *= RULES.chargeVsMissile;
+        er.counterHitT = r.counterDealT = t;
+        er.counterHitMul = r.counterDealMul = RULES.cavVsMissile;
+      }
       // 正面迎擊的步兵陣列：衝擊力被分散（側面、背後衝鋒仍是全力）
       const frontMul = front && !er.unit.mounted && er.unit.cls !== 'missile' ? RULES.chargeFrontMul : 1;
       dmg *= frontMul;
@@ -1232,7 +1241,16 @@ export class World {
         }
         if (er.formation === 'loose') dmg *= 0.6;
         // 射剋槍：長槍兵沒有盾、陣形密集
-        if (eu.cls === 'pole' && p.team[k] !== s.team[best]) dmg *= RULES.missileVsPole;
+        if (eu.cls === 'pole' && p.team[k] !== s.team[best]) {
+          dmg *= RULES.missileVsPole;
+          er.counterHitT = this.t;
+          er.counterHitMul = RULES.missileVsPole;
+          const shooter = this.regs[p.reg[k]];
+          if (shooter) {
+            shooter.counterDealT = this.t;
+            shooter.counterDealMul = RULES.missileVsPole;
+          }
+        }
         if (this.nav.forestAt(x, z) > 0.4) dmg *= 1 - RULES.forestArrow;
         if (s.team[best] === p.team[k]) dmg *= RULES.friendlyFireMul;
         er.arrowsTaken++;

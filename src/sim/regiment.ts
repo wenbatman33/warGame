@@ -7,6 +7,10 @@ export type Formation = 'line' | 'square' | 'wedge' | 'loose';
 export type OrderType = 'idle' | 'move' | 'attack' | 'retreat';
 export type RegState = 'ready' | 'moving' | 'engaged' | 'routing' | 'shattered' | 'destroyed';
 export type AiRole = 'line' | 'ranged' | 'flank' | 'reserve' | 'guard' | 'raider' | 'hold';
+/** 玩家戰線分組 */
+export type GroupId = 'left' | 'center' | 'right' | 'strike' | 'reserve';
+/** 戰線指令（整組戰術姿態）；free＝玩家逐團手動操作 */
+export type Stance = 'free' | 'hold' | 'advance' | 'retreat' | 'flank';
 
 export interface Order {
   type: OrderType;
@@ -115,6 +119,17 @@ export class Regiment {
   outT = 0;
   /** 撤退中的武將（單人隊伍，回到本陣即離場） */
   retreatHome = false;
+  /** 玩家戰線分組與戰術姿態 */
+  group: GroupId | null = null;
+  stance: Stance = 'free';
+  /** 姿態的錨點（固守位置、後撤目的地） */
+  stanceX = 0;
+  stanceZ = 0;
+  /** 最近一次「被剋」／「剋制」的時間與倍率（戰場提示用） */
+  counterHitT = -99;
+  counterHitMul = 1;
+  counterDealT = -99;
+  counterDealMul = 1;
   ai: { role: AiRole; anchorX: number; anchorZ: number; waitUntil: number; homeX: number; homeZ: number; targetT: number } = {
     role: 'line',
     anchorX: 0,
