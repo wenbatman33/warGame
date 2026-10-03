@@ -125,6 +125,12 @@ export const CHIBI: Scenario = {
     burning: i % 4 !== 3,
     burnt: i % 5 === 1,
   })),
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '擋住登岸的曹軍', how: '步兵沿江岸按「🛡 固守」，長槍擋騎兵、刀盾擋步兵。', done: (w) => (w.started ? w.t - ((w.flags.startT as number) ?? 0) : 0) > 60 },
+    { text: '火燒連營', how: '選<b>弓兵</b> → 右鍵點曹軍營寨射火矢；或選周瑜按「⭐ 火燒連營」。燒掉三座以上，火會順風蔓延。', done: (w) => w.structs.filter((s) => s.team === 1 && s.kind === 'camp' && s.burnt).length >= 3 },
+    { text: '曹軍斷糧後總攻', how: '曹軍糧道斷絕後選全軍按「⚔ 推進」，逼退曹操就贏。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰曹軍', check: (w) => w.winner === 0 },
     { text: '燒毀全部六座營寨', check: (w) => w.structs.filter((s) => s.kind === 'camp' && s.burnt).length >= 6 },
@@ -147,6 +153,18 @@ export const CHIBI: Scenario = {
     w.events.push({ k: 'msg', text: '東風起！黃蓋火船直衝曹營', tone: 'gold' });
   },
   triggers: [
+    {
+      // 連營燒掉四座：火勢延燒到烏林糧營
+      when: (w) => w.structs.filter((s) => s.team === 1 && s.kind === 'camp' && s.burnt).length >= 4,
+      run: (w) => {
+        const st = w.structs.find((s) => s.name === '烏林糧營' && !s.burnt);
+        if (!st) return;
+        st.ignite = 1;
+        st.fire = Math.max(st.fire, 0.6);
+        w.events.push({ k: 'ignite', s: st.id });
+        w.events.push({ k: 'msg', text: '連營盡焚，火勢延燒烏林糧營！', tone: 'gold' });
+      },
+    },
     {
       when: (w) => w.structs.filter((s) => s.kind === 'camp' && s.burnt).length >= 3,
       run: (w) => {

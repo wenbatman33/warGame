@@ -21,4 +21,5 @@ export const STRATAGEMS: Record<StratagemId, StratagemDef> = {
   rockfall: { id: 'rockfall', name: '落石', cost: 3, target: 'area', radius: 15, icon: '🪨', desc: '只能用在斜坡：滾石重創坡下敵軍並擊倒' },
 };
 
-export const STRATAGEM_ORDER: StratagemId[] = ['drums', 'firearrows', 'march', 'scout', 'retreat', 'rockfall'];
+/** 玩家可用的計策（精簡為四張：穩士氣、點火、偵察、撤退） */
+export const STRATAGEM_ORDER: StratagemId[] = ['drums', 'firearrows', 'scout', 'retreat'];

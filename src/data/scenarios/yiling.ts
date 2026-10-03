@@ -134,6 +134,12 @@ export const YILING: Scenario = {
       ],
     },
   ],
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '堅守不出', how: '全軍按「🛡 固守」，等蜀軍在酷暑中消耗。別深入林中。', done: (w) => (w.started ? w.t - ((w.flags.startT as number) ?? 0) : 0) > 120 },
+    { text: '火燒連營', how: '選<b>弓兵</b> → 右鍵點蜀軍林中營寨射火矢；或選陸遜按「⭐ 火燒連營」。營寨會互相延燒。', done: (w) => w.structs.filter((s) => s.team === 1 && s.kind === 'camp' && s.burnt).length >= 4 },
+    { text: '總攻', how: '蜀軍大亂後選全軍按「⚔ 推進」，逼退劉備就贏。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰蜀軍', check: (w) => w.winner === 0 },
     { text: '燒毀 6 座以上蜀營', check: (w) => w.structs.filter((s) => s.kind === 'camp' && s.burnt).length >= 6 },

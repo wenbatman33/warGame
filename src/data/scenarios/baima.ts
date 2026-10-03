@@ -49,7 +49,7 @@ export const BAIMA: Scenario = {
       commander: 'guanyu',
       commanderLoss: false,
       hq: { x: 0, z: 150, stock: 400, name: '曹營' },
-      depots: [],
+      depots: [{ x: -110, z: 172, stock: 500, name: '曹軍糧車' }],
       deploy: { x: 0, z: 85, w: 260, d: 90 },
       regiments: [
         { type: 'guard', x: 60, z: 95, general: 'guanyu', name: '關羽（暫歸曹營）' },
@@ -79,6 +79,11 @@ export const BAIMA: Scenario = {
     // 史實：關羽刺顏良於馬下
     w.duelFate = (a, b) => ((a === 'guanyu' && b === 'yanliang') || (a === 'yanliang' && b === 'guanyu') ? { winner: 'guanyu', killed: true } : null);
   },
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '守住正面', how: '開戰後選<b>刀盾兵、長槍兵</b> → 按「🛡 固守」。正面對打是等值消耗，別急著衝。', done: (w) => w.regs.some((r) => r.team === 0 && r.engagedWith.size > 0) },
+    { text: '關羽斬顏良', how: '選<b>關羽</b> → 右鍵點<b>顏良</b>（敵軍主帥）。關羽靠近他就會單挑，主帥一死袁軍全軍敗退。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰袁軍', check: (w) => w.winner === 0 },
     { text: '關羽斬顏良', check: (w) => w.regs.some((r) => r.general?.id === 'yanliang' && !r.general.alive && !r.general.fled) },
@@ -89,7 +94,8 @@ export const BAIMA: Scenario = {
     { at: -1, text: '主公，先學選取：<b>左鍵點一下我軍的軍團</b>（或下方的卡片、頭上的徽章）。' },
     { when: flag('did_select'), deploy: true, text: '很好！現在<b>右鍵點地面</b>，軍團就會移動過去。' },
     { when: flag('did_move'), deploy: true, text: '進階：選好軍團後<b>右鍵按住拖曳</b>，可以拉出一條戰線（拖曳長度＝陣寬、方向＝朝向）。也可以先 Shift 多選再拉。' },
-    { when: flag('did_line'), deploy: true, text: '佈陣完成就按下方「<b>⚔ 開戰</b>」（或 Enter）。開戰後可以隨時按<b>空白鍵暫停</b>。' },
+    { when: flag('did_line'), deploy: true, text: '最重要的一步：<b>部署糧道</b>。地上的流動虛線是我軍糧道（糧車 → 曹營）。在下方面板選「官道／前線捷徑／後方小路」，或直接<b>拖曳地圖上的 🍚 標記</b>自訂路線——靠前線補給延伸、但容易被切斷。' },
+    { when: flag('did_route'), deploy: true, text: '佈陣完成就按下方「<b>⚔ 開戰</b>」（或 Enter）。開戰後可以隨時按<b>空白鍵暫停</b>。' },
     { at: 3, text: '選<b>弓兵</b>，<b>右鍵點敵軍</b>就會進入射程放箭。弓兵怕近戰，記得放在步兵後面。' },
     { when: (w) => !!w.flags.did_attack, text: '兩軍正面對打是<b>等值消耗</b>。用<b>刀盾兵</b>頂住正面（正面很硬），再派<b>騎兵</b>繞到側面或背後——側面傷害 ×1.4、背後 ×2！' },
     { when: (w) => w.regs.some((r) => r.team === 0 && r.engagedWith.size > 0), text: '<b>兵種相剋</b>：長槍剋騎兵、騎兵剋弓兵、弓兵剋長槍、刀盾近身剋長槍。用對的兵種打對的敵人，消耗就會一面倒。' },

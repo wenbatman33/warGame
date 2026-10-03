@@ -183,7 +183,7 @@ export class World {
       const hq = this.teams[st.team].hq;
       if (!hq || st === hq) continue;
       const raw = [[st.x, st.z] as [number, number], ...this.nav.findPath(st.x, st.z, hq.x, hq.z), [hq.x, hq.z] as [number, number]];
-      st.route = densify(raw, 6);
+      this.setRoute(st, densify(raw, 6));
     }
     // 後方方向：己方本陣（沒有就用初始兵力重心）相對雙方重心的中點
     const centroid = (t: number): [number, number] => {
@@ -236,6 +236,7 @@ export class World {
       n++;
     }
     tr.wet = n > 0 && wet / n > 0.3;
+    if (tr.wet) r.wetT = this.t;
     tr.camp = this.inOwnCamp(r.mx, r.mz, r.team);
     tr.road = this.hf.roadAt(r.mx, r.mz) > 0.5;
     // 相對最近敵軍的高低差
@@ -251,6 +252,11 @@ export class World {
     }
     tr.relHeight = best < Infinity ? rel : 0;
     tr.high = tr.relHeight > 2 || (best === Infinity && tr.height > 4);
+  }
+
+  /** 半渡：涉水中，或上岸不到 fordGrace 秒（陣形未整） */
+  fording(r: Regiment): boolean {
+    return r.terrain.wet || this.t - r.wetT < RULES.fordGrace;
   }
 
   /** 高低差造成的近戰倍率 */
@@ -565,9 +571,16 @@ export class World {
             this.events.push({ k: 'chargeStart', reg: r.id });
           }
         }
-        if (d > contact) {
-          moving = this.moveAnchorToward(r, tr.mx - Math.sin(face) * contact * 0.5, tr.mz - Math.cos(face) * contact * 0.5, dt, wantRun, 1.0);
+        // 半渡而擊：目標在水裡、自己在岸上 → 停在岸邊迎擊，不下水
+        const gx = tr.mx - Math.sin(face) * contact * 0.5;
+        const gz = tr.mz - Math.cos(face) * contact * 0.5;
+        const holdBank = tr.terrain.wet && !this.fording(r) && this.isWet(gx, gz);
+        if (d > contact && !holdBank) {
+          moving = this.moveAnchorToward(r, gx, gz, dt, wantRun, 1.0);
           if (d < 40) this.turnToward(r, face, dt);
+        } else if (holdBank) {
+          r.path = [];
+          this.turnToward(r, face, dt);
         } else {
           r.path = [];
           this.turnToward(r, face, dt * 0.5);
@@ -608,6 +621,7 @@ export class World {
       r.fireTarget = this.nearestEnemyInRange(r, r.unit.ranged!.range);
     }
     r.state = r.engagedWith.size > 0 ? 'engaged' : moving ? 'moving' : 'ready';
+    if (moving) r.movedT = this.t;
     // 體力
     const tireless = r.hasBuff('tireless', this.t);
     let ds = 0;
@@ -618,26 +632,48 @@ export class World {
     r.stamina = Math.max(0, Math.min(100, r.stamina + ds * dt));
   }
 
+  /** 待命時的自動反應：步兵原地列陣迎敵（不衝出去，保住防守優勢）、被側擊轉向；騎兵反衝貼身的敵軍 */
   private autoEngage(r: Regiment): void {
-    if (r.hold && !r.ranged) {
-      // 堅守：只打衝進來的
+    if (r.ranged) return;
+    if (!r.unit.mounted) {
+      if (r.engagedWith.size === 0) return;
+      // 正面有敵人纏住就不轉；否則轉向來敵（側擊、背襲變成正面）
+      let x = 0;
+      let z = 0;
+      let n = 0;
+      let pinned = false;
+      for (const id of r.engagedWith) {
+        const e = this.regs[id];
+        const a = Math.atan2(e.mx - r.mx, e.mz - r.mz);
+        if (Math.abs(angDiff(r.facing, a)) < 1.0) pinned = true;
+        x += e.mx * e.alive;
+        z += e.mz * e.alive;
+        n += e.alive;
+      }
+      if (!pinned && n > 0) this.turnToward(r, Math.atan2(x / n - r.mx, z / n - r.mz), 0.5);
       return;
     }
-    if (r.ranged) return;
+    if (r.hold) return;
+    // 騎兵：貼身的敵軍就反衝；被攻擊時一定反擊
     let best = -1;
-    let bd = r.unit.mounted ? 0 : 28;
+    let bd = 0;
     for (const id of r.nearEnemies) {
       const e = this.regs[id];
       if (!this.isVisibleTo(e, r.team)) continue;
       const d = Math.hypot(e.mx - r.mx, e.mz - r.mz) - e.radius - r.radius;
+      if (this.fording(e) && !this.fording(r) && d > 10) continue;
       if (d < bd) {
         bd = d;
         best = id;
       }
     }
-    // 被攻擊時一定反擊
     if (best < 0 && r.engagedWith.size > 0) best = [...r.engagedWith][0];
     if (best >= 0) this.commandAttack([r.id], best);
+  }
+
+  /** 列陣迎敵：站穩（3 秒沒移動）、沒有在進攻或行軍的步兵＝防守方 */
+  defending(r: Regiment): boolean {
+    return !r.unit.mounted && r.order.type !== 'attack' && r.order.type !== 'move' && r.order.type !== 'retreat' && this.t - r.movedT > RULES.formTime;
   }
 
   nearestEnemyInRange(r: Regiment, range: number): number {
@@ -846,7 +882,11 @@ export class World {
           faceTo = Math.atan2(ex - s.x[i], ez - s.z[i]);
           wantFace = true;
           const reach = u.reach + (s.general[tgt] ? 0.6 : 0) + (UNITS[this.regs[s.reg[tgt]].type].mounted ? 0.5 : 0);
-          if (d > reach * 0.9) {
+          // 岸上的防守方不踏進水裡追敵（等敵人自己上岸）
+          const stayDry = d > reach * 0.9 && !this.fording(r) && this.isWet(ex, ez) && r.order.type !== 'attack';
+          if (stayDry) {
+            // 留在陣位
+          } else if (d > reach * 0.9) {
             tx = ex;
             tz = ez;
             // 騎兵：遠處全速衝，貼近後減速纏鬥（不會一直繞圈、讓步兵砍不到）
@@ -1035,8 +1075,18 @@ export class World {
     if (r.stamina < 30) dmg *= 0.85;
     // 地形：高低差、涉水（半渡而擊）、森林中的騎兵、己方營寨
     dmg *= this.heightMul(this.hf.height(s.x[i], s.z[i]), this.hf.height(s.x[j], s.z[j]));
-    if (this.isWet(s.x[j], s.z[j])) dmg *= 1 + RULES.fordDef;
-    if (this.isWet(s.x[i], s.z[i])) dmg *= RULES.fordAtk;
+    // 列陣迎敵：防守方正面受傷減少、反擊加成（主動進攻列陣步兵要付出代價）
+    if (!rearHit && !flankHit && this.defending(er)) {
+      dmg *= RULES.holdDef;
+      er.holdBlockT = t;
+    }
+    if (this.defending(r)) dmg *= RULES.holdAtk;
+    // 半渡而擊：涉水中或剛上岸、陣形未整的部隊受傷大增、攻擊大減
+    if (this.fording(er)) {
+      dmg *= 1 + RULES.fordDef;
+      r.fordDealT = t;
+    }
+    if (this.fording(r)) dmg *= RULES.fordAtk;
     if (u.mounted && r.terrain.forest) dmg *= RULES.forestCavAtk;
     if (er.terrain.camp) dmg *= 1 - RULES.campDef;
     if (this.rng() < 0.25) this.events.push({ k: 'clash', x: s.x[j], z: s.z[j] });
@@ -1142,7 +1192,7 @@ export class World {
     if (r.order.type === 'attack' && r.order.struct >= 0) {
       const st = this.structs[r.order.struct];
       const dist0 = Math.hypot(st.x - s.x[i], st.z - s.z[i]);
-      if (!st.burnt && dist0 < rd.range * 1.05 * this.wx.range && Math.hypot(s.vx[i], s.vz[i]) < 0.6) {
+      if (!st.burnt && dist0 < rd.range * 1.05 * this.wx.range && Math.hypot(s.vx[i], s.vz[i]) < 0.6 && this.t - r.movedT >= RULES.aimDelay) {
         const a = this.rng() * Math.PI * 2;
         const rr = Math.sqrt(this.rng()) * st.radius * 0.7;
         const ax = st.x + Math.cos(a) * rr;
@@ -1160,6 +1210,8 @@ export class World {
       return;
     }
     if (r.fireTarget < 0) return;
+    // 行軍中不能放箭；停下後要架弓 aimDelay 秒
+    if (!r.unit.mounted && (r.order.type === 'move' || r.order.type === 'retreat' || r.state === 'moving' || this.t - r.movedT < RULES.aimDelay)) return;
     const moving = Math.hypot(s.vx[i], s.vz[i]) > 0.6;
     if (moving && !r.unit.mounted) return;
     const tr = this.regs[r.fireTarget];
@@ -1240,6 +1292,8 @@ export class World {
           shielded = true;
         }
         if (er.formation === 'loose') dmg *= 0.6;
+        // 涉水的敵軍擠成一團、舉不起盾
+        if (this.fording(er) && p.team[k] !== s.team[best]) dmg *= RULES.fordArrow;
         // 射剋槍：長槍兵沒有盾、陣形密集
         if (eu.cls === 'pole' && p.team[k] !== s.team[best]) {
           dmg *= RULES.missileVsPole;
@@ -1332,7 +1386,8 @@ export class World {
     for (let i = 0; i < s.count; i++) {
       if (s.state[i] !== SState.Alive) continue;
       const mi = this.regs[s.reg[i]].unit.mounted;
-      const ri = mi ? 0.95 : 0.4;
+      // 騎兵密集隊形：馬身窄長，碰撞半徑取 0.65（前後可略重疊）
+      const ri = mi ? 0.65 : 0.4;
       const n = this.hash.near(s.x[i], s.z[i], 2.2);
       let pushX = 0;
       let pushZ = 0;
@@ -1340,7 +1395,7 @@ export class World {
         const j = res[k];
         if (j === i || s.state[j] !== SState.Alive) continue;
         const mj = this.regs[s.reg[j]].unit.mounted;
-        const min = ri + (mj ? 0.95 : 0.4);
+        const min = ri + (mj ? 0.65 : 0.4);
         const dx = s.x[i] - s.x[j];
         const dz = s.z[i] - s.z[j];
         const d2 = dx * dx + dz * dz;
@@ -1420,7 +1475,7 @@ export class World {
       }
       // 地形：高地回復、涉水交戰恐慌（半渡而擊）、仰攻、己方營寨安心
       if (r.terrain.high) dm += 0.3 * dt;
-      if (r.terrain.wet && r.engagedWith.size > 0) dm -= RULES.fordMorale * dt;
+      if (this.fording(r) && r.engagedWith.size > 0) dm -= RULES.fordMorale * dt;
       if (r.engagedWith.size > 0 && r.terrain.relHeight < -5) dm -= RULES.uphillMorale * dt;
       if (r.terrain.camp) dm += RULES.campMorale * dt;
       if (dm < 0) dm *= this.teamGrit[r.team];
@@ -1518,6 +1573,14 @@ export class World {
 
   // ───────────────────────── 糧草與建築（docs/03） ─────────────────────────
 
+  /** 設定糧道路線：運糧時間依路線長度（輜重車往返的一半） */
+  setRoute(st: Structure, route: [number, number][]): void {
+    st.route = route;
+    let len = 0;
+    for (let k = 1; k < route.length; k++) len += Math.hypot(route[k][0] - route[k - 1][0], route[k][1] - route[k - 1][1]);
+    st.transit = len / (RULES.wagonSpeed * 2);
+  }
+
   /** 補給來源：糧倉與水源（沒有的話用營寨）；都沒有＝這場不打糧草戰 */
   supplySources(team: TeamState): Structure[] {
     const main = team.depots.filter((d) => d.kind === 'depot' || d.kind === 'water');
@@ -1549,6 +1612,8 @@ export class World {
           st.cutT += dt;
           if (st.cutT >= RULES.lineCutTime) st.cut = true;
         } else {
+          // 糧道恢復：糧食要沿路線重新送到本陣（路線越長越久）
+          if (st.cut) st.arriveT = this.t + st.transit;
           st.cutT = 0;
           st.cut = false;
         }
@@ -1589,7 +1654,7 @@ export class World {
       if (!sources.length) continue;
       // 主糧倉（例：烏巢）被焚＝命脈斷絕；否則至少一條糧道暢通即可
       const mainLost = sources.some((d) => d.main && d.burnt);
-      const lineOk = !mainLost && !hq.burnt && sources.some((d) => !d.burnt && d.team === d.owner && !d.cut);
+      const lineOk = !mainLost && !hq.burnt && sources.some((d) => !d.burnt && d.team === d.owner && !d.cut && this.t >= d.arriveT);
       const use = (hq.maxStock / RULES.reserveSec) * team.consume * dt;
       if (this.started && !hq.burnt) hq.stock = lineOk ? Math.min(hq.maxStock, hq.stock + use * (RULES.lineFlow - 1)) : Math.max(0, hq.stock - use);
       const f = hq.burnt ? 0 : hq.frac;
@@ -1638,9 +1703,12 @@ export class World {
     for (const r of this.regs) {
       r.inSupply = false;
       if (r.gone) continue;
-      const hq = this.teams[r.team].hq;
+      const team = this.teams[r.team];
+      const hq = team.hq;
       if (!hq || hq.burnt || this.supplyOf(r) === 'starving') continue;
-      if (Math.hypot(r.mx - hq.x, r.mz - hq.z) > RULES.supplyRadius) continue;
+      // 本陣附近，或暢通的糧道沿線 40 m 內：補箭、體力回復加快
+      const nearLine = team.lineOk && team.depots.some((d) => d.route.length > 1 && !d.cut && !d.burnt && distToRoute(d.route, r.mx, r.mz)[0] < 40);
+      if (Math.hypot(r.mx - hq.x, r.mz - hq.z) > RULES.supplyRadius && !nearLine) continue;
       r.inSupply = true;
       const rd = r.unit.ranged;
       if (!rd || r.engagedWith.size > 0) continue;
@@ -2052,6 +2120,8 @@ export class World {
           else if (!killed) r.morale -= 8;
         }
         s.stun[ia] = s.stun[ib] = 1.5;
+        // 單挑落敗未死：負傷敗走（武將撤退；主帥敗走＝全軍敗退）
+        if (!killed && lose.general?.alive) this.retreatGeneral(lose);
         return;
       }
     }
@@ -2318,7 +2388,7 @@ export function counterMul(att: UnitDef, def: UnitDef): number {
 }
 
 /** 路線加密：相鄰點不超過 step 公尺 */
-function densify(pts: [number, number][], step: number): [number, number][] {
+export function densify(pts: [number, number][], step: number): [number, number][] {
   const out: [number, number][] = [];
   for (let k = 0; k < pts.length; k++) {
     const [x, z] = pts[k];

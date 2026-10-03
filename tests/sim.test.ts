@@ -205,6 +205,9 @@ describe('糧草', () => {
     w.commandHalt([0]);
     for (let k = 0; k < 61; k++) w.step();
     expect(depot.cut).toBe(false);
+    // 糧食要沿路線重新送到本陣（運糧時間依路線長度）
+    expect(w.teams[1].supply).not.toBe('ok');
+    for (let k = 0; k < Math.ceil(depot.transit + 2) * 30; k++) w.step();
     expect(w.teams[1].supply).toBe('ok');
   });
 });

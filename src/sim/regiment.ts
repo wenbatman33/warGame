@@ -130,6 +130,14 @@ export class Regiment {
   counterHitMul = 1;
   counterDealT = -99;
   counterDealMul = 1;
+  /** 最近一次在水中（涉水）的時間：上岸 6 秒內陣形未整＝仍算半渡 */
+  wetT = -99;
+  /** 最近一次「半渡而擊」得手的時間（戰場提示用） */
+  fordDealT = -99;
+  /** 最近一次行軍的時間：弓兵停下後要架弓才能射；步兵站穩後才算列陣 */
+  movedT = -99;
+  /** 最近一次「列陣擋下」正面攻擊的時間（戰場提示用） */
+  holdBlockT = -99;
   ai: { role: AiRole; anchorX: number; anchorZ: number; waitUntil: number; homeX: number; homeZ: number; targetT: number } = {
     role: 'line',
     anchorX: 0,

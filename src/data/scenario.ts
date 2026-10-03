@@ -51,6 +51,16 @@ export interface TeamSpec {
   consume?: number;
 }
 
+/** 作戰步驟：畫面上依序引導玩家（完成自動打勾） */
+export interface PlanStep {
+  /** 這一步要做什麼 */
+  text: string;
+  /** 怎麼操作（目前步驟才顯示） */
+  how: string;
+  /** 完成條件 */
+  done: (w: World) => boolean;
+}
+
 export interface StarSpec {
   text: string;
   check: (w: World) => boolean;
@@ -96,6 +106,8 @@ export interface Scenario {
   advisor?: { name: string; portrait: string };
   /** 堅守到時間（秒）即勝利 */
   holdTime?: number;
+  /** 作戰步驟（右側面板依序引導） */
+  plan?: PlanStep[];
   camera?: { x: number; z: number; dist?: number; yaw?: number };
   /** 天色：day／dusk／night */
   time?: 'day' | 'dusk' | 'night';

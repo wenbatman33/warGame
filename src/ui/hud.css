@@ -216,7 +216,23 @@ body.picking canvas { cursor: crosshair; }
 .goalbox .ok { color: #ffe27a; }
 .goalbox .hold { color: #9cff7a; font-weight: 900; }
 .goalbox.min > div:not(.gt) { display: none; }
-@media (max-width: 820px), (max-height: 500px) { .goalbox { display: none; } }
+/* 作戰步驟：目前這一步亮起、寫出怎麼操作 */
+.goalbox { width: 240px; }
+.goalbox .step { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; color: #999; }
+.goalbox .step .no { flex: 0 0 18px; height: 18px; border-radius: 50%; border: 2px solid #000; background: #3a332a; color: #ccc; font-size: 11px; font-weight: 900; display: grid; place-items: center; }
+.goalbox .step b { font-weight: 900; font-size: 12px; }
+.goalbox .step small { display: block; font-size: 11px; color: #ffe9b8; line-height: 1.45; margin-top: 2px; }
+.goalbox .step.now { color: #fff; background: rgba(255, 210, 74, 0.14); border-radius: 8px; padding: 4px 4px 5px 2px; box-shadow: inset 3px 0 0 var(--gold); }
+.goalbox .step.now .no { background: var(--gold); color: #000; animation: blink 1.2s infinite; }
+.goalbox .step.done { color: #7fbf6a; }
+.goalbox .step.done b { text-decoration: line-through; text-decoration-color: rgba(127, 191, 106, 0.6); }
+.goalbox .step.done .no { background: #3f8f3a; color: #fff; }
+/* 手機：只顯示目前這一步 */
+@media (max-width: 820px), (max-height: 500px) {
+  .deploying .goalbox { display: none; }
+  .goalbox { width: 200px; font-size: 10px; }
+  .goalbox .step:not(.now), .goalbox > div:not(.gt):not(.step):not(.hold) { display: none; }
+}
 
 .reopen { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font-size: 18px; padding: 8px 22px; pointer-events: auto; }
 /* 結算：小螢幕縮小並可捲動 */
@@ -277,4 +293,21 @@ body.picking canvas { cursor: crosshair; }
 @media (max-width: 900px) {
   .gchip { font-size: 10px; padding: 1px 6px 1px 5px; }
   .cmdbar .stance { font-size: 11px; padding: 4px 6px; }
+}
+
+/* ───── 糧道部署（部署階段） ───── */
+.deploy .splan { pointer-events: auto; background: var(--panel); border: 2px solid #000; border-radius: 12px; padding: 6px 10px; margin: 0 auto 6px; color: #fff; font-size: 12px; text-align: left; max-width: min(560px, 92vw); box-shadow: 0 3px 0 #000; }
+.deploy .splan .sh { font-weight: 900; color: #ffe39a; margin-bottom: 4px; }
+.deploy .splan .sp { display: flex; gap: 6px; margin-bottom: 4px; }
+.deploy .splan .sp .btn { font-size: 12px; padding: 3px 10px; }
+.deploy .splan .sp .btn.on { background: linear-gradient(#ffe07a, #d39a22); color: var(--ink); box-shadow: 0 0 0 2px #fff; }
+.deploy .splan .ss { font-size: 12px; color: #ddd; }
+.deploy .splan .ss b { color: #fff; }
+.deploy .splan .sn { font-size: 11px; color: #bbb; margin-top: 2px; }
+.viah { position: absolute; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; background: radial-gradient(#fff6d0, #e0a52a); border: 3px solid #000; box-shadow: 0 0 0 3px #ffe39a, 0 0 18px #ffd24a; cursor: grab; pointer-events: auto; animation: viapulse 1.4s ease-in-out infinite; touch-action: none; z-index: 5; }
+.viah.drag { cursor: grabbing; animation: none; transform-origin: center; box-shadow: 0 0 0 4px #fff, 0 0 26px #ffd24a; }
+@keyframes viapulse { 50% { box-shadow: 0 0 0 6px rgba(255, 227, 154, 0.5), 0 0 26px #ffd24a; } }
+@media (max-height: 500px) {
+  .deploy .splan { font-size: 10px; padding: 4px 8px; max-width: 70vw; }
+  .deploy .splan .sn { display: none; }
 }

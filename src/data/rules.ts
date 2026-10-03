@@ -119,10 +119,18 @@ export const RULES = {
   forestDef: 0.08,
   forestCharge: 0.3,
   forestCavAtk: 0.8,
-  /** 涉水（半渡而擊）：防禦、攻擊、交戰中士氣流失 */
-  fordDef: 0.25,
-  fordAtk: 0.85,
-  fordMorale: 1.2,
+  /** 半渡（涉水中或上岸 fordGrace 秒內）：受傷加成、攻擊倍率、交戰中士氣流失、箭傷加成 */
+  fordDef: 0.6,
+  fordAtk: 0.6,
+  fordMorale: 1.5,
+  fordGrace: 10,
+  fordArrow: 1.3,
+  /** 弓兵停下後架弓才能放箭（秒） */
+  aimDelay: 1.2,
+  /** 列陣迎敵（防守方）：站穩秒數、正面受傷倍率、反擊倍率 */
+  formTime: 3,
+  holdDef: 0.7,
+  holdAtk: 1.15,
   /** 己方營寨內：防禦、士氣回復 */
   campDef: 0.25,
   campMorale: 0.8,

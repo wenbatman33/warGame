@@ -31,6 +31,12 @@ export class Structure {
   /** 糧道被敵軍佔住的累積秒數、是否已切斷、切斷點 */
   cutT = 0;
   cut = false;
+  /** 玩家部署的糧道經過點（null＝預設官道） */
+  via: [number, number] | null = null;
+  /** 運糧時間：糧道恢復後，糧食要多久才送到本陣（秒） */
+  transit = 20;
+  /** 糧道恢復、糧食送達本陣的時間 */
+  arriveT = 0;
   cutX = 0;
   cutZ = 0;
 

@@ -117,6 +117,15 @@ export const HEFEI: Scenario = {
       ],
     },
   ],
+  onStart: (w) => {
+    // 史實：張遼殺至孫權麾下，孫權驚走（落敗撤退＝吳軍敗退）
+    w.duelFate = (a, b) => ((a === 'zhangliao' && b === 'sunquan') || (a === 'sunquan' && b === 'zhangliao') ? { winner: 'zhangliao', killed: false } : null);
+  },
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '張遼突陣', how: '選<b>張遼與騎兵</b> → 按「🐎 包抄」或右鍵點吳軍側翼。從側面 ×1.4、背後 ×2。', done: (w) => w.regs.some((r) => r.general?.id === 'zhangliao' && r.engagedWith.size > 0) },
+    { text: '直取孫權', how: '選<b>張遼</b> → 右鍵點東南橋頭的<b>孫權</b>（敵軍主帥）。張遼靠近孫權會單挑，孫權敗走＝吳軍敗退。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰吳軍', check: (w) => w.winner === 0 },
     { text: '擊殺孫權', check: (w) => w.regs.some((r) => r.general?.id === 'sunquan' && !r.general.alive && !r.general.fled) },

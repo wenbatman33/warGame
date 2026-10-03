@@ -88,6 +88,8 @@ export class AiCommander {
     for (const e of list) {
       if (e.routing || (filter && !filter(e))) continue;
       const d = this.dist(r, e);
+      // 半渡而擊：涉水中的敵軍等它走到岸邊再打，不下水追（自己下水就換自己吃虧）
+      if (this.w.fording(e) && !this.w.fording(r) && !r.ranged && d - e.radius - r.radius > 10) continue;
       if (d < bd) {
         bd = d;
         best = e;

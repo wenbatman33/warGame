@@ -12,7 +12,9 @@ import { terrainBase, terrainView } from '../render/terrain';
 import type { Regiment } from '../sim/regiment';
 import type { GameEvent } from '../sim/world';
 import { SETTINGS } from '../game/settings';
-import { GROUP_ORDER, GROUPS, STANCES } from '../game/tactics';
+import { GROUP_ORDER, STANCES } from '../game/tactics';
+import { ROUTE_PRESETS, applyVia, currentPreset, dragVia, plannable, presetVia, routeStats, type RoutePreset } from '../game/supplyPlan';
+import type { Structure } from '../sim/structures';
 import { counterMul } from '../sim/world';
 import type { UnitClass, UnitDef } from '../data/units';
 import type { GroupId, Stance } from '../sim/regiment';
@@ -74,7 +76,9 @@ export class Hud {
   /** 結算結果（觀戰後用 🚪 離開也會記錄） */
   private result: { scenario: string; win: boolean; stars: boolean[]; time: number } | null = null;
   private resultHtml = '';
-  private groupsEl!: HTMLDivElement;
+  /** 糧道部署：每個糧倉一組（面板、地圖上的拖曳標記） */
+  private plans: { st: Structure; panel: HTMLElement; handle: HTMLElement }[] = [];
+  private planDragT = 0;
   private groupChips = new Map<GroupId, HTMLElement>();
   private cardFade: () => void = () => {};
 
@@ -244,36 +248,6 @@ export class Hud {
       strats.appendChild(s);
       this.stratEls.set(id, s);
     }
-    // 戰線分組：點一下選取整組；把卡片拖到分組上可換組
-    this.groupsEl = el('div', 'groups');
-    for (const g of GROUP_ORDER) {
-      const chip = el('div', 'gchip');
-      chip.style.setProperty('--gc', GROUPS[g].color);
-      chip.innerHTML = `<b class="stroke">${GROUPS[g].name}</b><span class="n stroke">0</span><span class="si"></span>`;
-      chip.title = `${GROUPS[g].name}：點一下選取整組、雙擊鏡頭跳過去；把下方卡片拖到這裡可以換組`;
-      chip.onclick = () => {
-        audio.unlock();
-        b.controls.select(w.regs.filter((r) => r.team === w.player && !r.gone && r.group === g).map((r) => r.id));
-      };
-      chip.ondblclick = () => {
-        const rs = w.regs.filter((r) => r.team === w.player && !r.gone && r.group === g);
-        if (rs.length) b.cam.set(rs.reduce((a, r) => a + r.mx, 0) / rs.length, rs.reduce((a, r) => a + r.mz, 0) / rs.length, undefined, undefined, false);
-      };
-      chip.ondragover = (e) => {
-        e.preventDefault();
-        chip.classList.add('drop');
-      };
-      chip.ondragleave = () => chip.classList.remove('drop');
-      chip.ondrop = (e) => {
-        e.preventDefault();
-        chip.classList.remove('drop');
-        const id = Number(e.dataTransfer?.getData('text/plain'));
-        const r = w.regs[id];
-        if (r && r.team === w.player) this.setGroup([id], g);
-      };
-      this.groupsEl.appendChild(chip);
-      this.groupChips.set(g, chip);
-    }
     const all = el('div', 'card allbtn', '<div class="ico">⚔</div><div class="nm stroke">全軍</div>');
     all.title = '選取全軍（Ctrl＋A）';
     all.onclick = () => {
@@ -281,15 +255,15 @@ export class Hud {
       b.controls.select(w.regs.filter((r) => r.team === w.player && !r.gone && !r.routing).map((r) => r.id));
     };
     this.cardsEl.prepend(all);
-    const left = el('div', 'bleft');
-    left.append(this.groupsEl, this.cardsEl);
-    bottom.append(left, strats);
+    bottom.append(this.cardsEl, strats);
     root.appendChild(bottom);
 
     // 部署面板
     this.deployEl = el('div', 'deploy');
     this.deployEl.dataset.layout = 'deploy';
-    this.deployEl.innerHTML = `<div class="hint">部署：左鍵選取／拖曳軍團（藍框內）・<b>右鍵拖曳拉出戰線</b>・🗺 地形看高地與淺灘・Enter 開戰</div>`;
+    this.deployEl.innerHTML = `<div class="hint">佈陣：拖曳軍團到藍框內的位置・<b>右鍵拖曳拉出戰線</b>・好了就按「開戰」</div>`;
+    // 糧道部署：快捷路線＋拖曳地圖上的 🍚 標記
+    for (const st of plannable(w)) this.buildSupplyPlan(st);
     const go = el('div', 'btn green go stroke', '⚔ 開戰');
     go.onclick = () => {
       audio.unlock();
@@ -388,7 +362,9 @@ export class Hud {
     if (now - r.counterHitT < 2.5) return { t: `被剋 ×${+r.counterHitMul.toFixed(2)}` };
     if (now - r.counterDealT < 2.5) return { t: `剋制 ×${+r.counterDealMul.toFixed(2)}`, good: true };
     if (now - r.chargeShockT < 2.5) return { t: '衝鋒！' };
-    if (r.terrain.wet && r.engagedWith.size > 0) return { t: '半渡 受傷+25%' };
+    if (now - r.holdBlockT < 2.5 && r.engagedWith.size > 0) return { t: `列陣 受傷−${Math.round((1 - RULES.holdDef) * 100)}%`, good: true };
+    if (w.fording(r) && r.engagedWith.size > 0) return { t: `半渡 受傷+${Math.round(RULES.fordDef * 100)}%` };
+    if (now - r.fordDealT < 2.5) return { t: `半渡而擊 ×${1 + RULES.fordDef}`, good: true };
     if (r.engagedWith.size > 0 && r.terrain.relHeight > 2) return { t: `居高 +${Math.round(Math.min(RULES.heightMax, r.terrain.relHeight * RULES.heightPerMeter) * 100)}%`, good: true };
     if (r.engagedWith.size > 0 && r.terrain.relHeight < -5) return { t: '仰攻' };
     const sup = w.supplyOf(r);
@@ -400,21 +376,106 @@ export class Hud {
     return null;
   }
 
+  /** 糧道部署面板＋地圖標記 */
+  private buildSupplyPlan(st: Structure): void {
+    const b = this.b;
+    const w = b.world;
+    const panel = el('div', 'splan');
+    panel.innerHTML = `<div class="sh">🍚 糧道部署：<b>${st.name}</b> → 本陣</div><div class="sp"></div><div class="ss"></div><div class="sn">拖曳地圖上的 <b>🍚</b> 標記，自訂糧道經過的位置</div>`;
+    const row = panel.querySelector('.sp') as HTMLElement;
+    for (const p of Object.keys(ROUTE_PRESETS) as RoutePreset[]) {
+      const d = ROUTE_PRESETS[p];
+      const e = el('div', 'btn sm', d.name);
+      e.dataset.p = p;
+      e.title = `${d.name}：${d.desc}`;
+      e.onclick = () => {
+        audio.play('ui_click');
+        applyVia(w, st, presetVia(w, st, p));
+        w.flags.did_route = true;
+        this.refreshPlan();
+      };
+      row.appendChild(e);
+    }
+    this.deployEl.insertBefore(panel, this.deployEl.querySelector('.go'));
+    // 地圖上的拖曳標記
+    const handle = el('div', 'viah stroke', '🍚');
+    handle.title = '拖曳：改變糧道經過的位置';
+    let drag = false;
+    handle.onpointerdown = (e) => {
+      if (b.phase !== 'deploy') return;
+      e.stopPropagation();
+      e.preventDefault();
+      drag = true;
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add('drag');
+    };
+    handle.onpointermove = (e) => {
+      if (!drag) return;
+      const now = performance.now();
+      if (now - this.planDragT < 70) return;
+      this.planDragT = now;
+      const g = b.controls.ground(e.clientX, e.clientY);
+      if (g) {
+        dragVia(w, st, g.x, g.z);
+        this.refreshPlan();
+      }
+    };
+    const end = (e: PointerEvent) => {
+      if (!drag) return;
+      drag = false;
+      handle.classList.remove('drag');
+      const g = b.controls.ground(e.clientX, e.clientY);
+      if (g) dragVia(w, st, g.x, g.z);
+      w.flags.did_route = true;
+      this.refreshPlan();
+      audio.play('ui_order');
+    };
+    handle.onpointerup = end;
+    handle.onpointercancel = end;
+    this.badgeLayer.appendChild(handle);
+    this.plans.push({ st, panel, handle });
+    this.refreshPlan();
+  }
+
+  /** 糧道部署：按鈕高亮與路線數據 */
+  private refreshPlan(): void {
+    const w = this.b.world;
+    for (const { st, panel } of this.plans) {
+      const cur = currentPreset(w, st);
+      for (const e of panel.querySelectorAll<HTMLElement>('.sp .btn')) e.classList.toggle('on', e.dataset.p === cur);
+      const rs = routeStats(w, st);
+      const col = rs.riskText === '高' ? '#ff6a55' : rs.riskText === '中' ? '#ffc24a' : '#7dff6a';
+      (panel.querySelector('.ss') as HTMLElement).innerHTML = `長 <b>${Math.round(rs.len)} m</b>・斷後恢復 <b>${Math.round(rs.transit)} 秒</b>・被切風險 <b style="color:${col}">${rs.riskText}</b>・補給延伸 <b>${Math.max(0, Math.round(rs.reach))} m</b>${cur ? '' : '（自訂）'}`;
+    }
+  }
+
+  /** 每幀：拖曳標記跟著路線（只在部署階段顯示） */
+  private updatePlanHandles(): void {
+    const b = this.b;
+    const w = b.world;
+    b.view.supplyLines.planning = b.phase === 'deploy';
+    for (const { st, handle } of this.plans) {
+      if (b.phase !== 'deploy') {
+        handle.style.display = 'none';
+        continue;
+      }
+      const [x, z] = st.via ?? st.route[Math.floor(st.route.length / 2)];
+      const p = b.controls.screenOf(x, w.groundY(x, z) + 2, z);
+      if (!p.vis) {
+        handle.style.display = 'none';
+        continue;
+      }
+      handle.style.display = '';
+      handle.style.transform = `translate(${(p.x - 18).toFixed(1)}px, ${(p.y - 18).toFixed(1)}px)`;
+    }
+  }
+
   /** 相剋提示：選取的我軍剋這個敵軍（good）或被它剋（bad） */
   private counterHint(sel: UnitDef[], e: UnitDef): 'good' | 'bad' | '' {
     const edge = (a: UnitDef, b: UnitDef) => Math.max(counterMul(a, b), a.ranged && b.cls === 'pole' ? RULES.missileVsPole : 1);
     if (sel.some((u) => edge(u, e) > 1.1)) return 'good';
     if (sel.some((u) => edge(e, u) > 1.1)) return 'bad';
     return '';
-  }
-
-  /** 把部隊換到某個分組 */
-  private setGroup(ids: number[], g: GroupId): void {
-    const w = this.b.world;
-    for (const id of ids) if (w.regs[id]?.team === w.player) w.regs[id].group = g;
-    this.toast(`編入${GROUPS[g].name}`, 'info', true);
-    this.refreshGroups();
-    this.refreshSelection();
   }
 
   /** 分組列：人數與共同姿態 */
@@ -452,10 +513,9 @@ export class Hud {
       (c.querySelector('.sb i') as HTMLElement).style.width = `${r.stamina}%`;
       (c.querySelector('.tags') as HTMLElement).textContent = r.gone ? '' : this.stateIcons(r);
       const gEl = c.querySelector('.grp') as HTMLElement;
-      if (r.group && !r.gone) {
+      if (r.stance !== 'free' && !r.gone) {
         gEl.style.display = '';
-        gEl.style.background = GROUPS[r.group].color;
-        gEl.textContent = `${GROUPS[r.group].short}${r.stance !== 'free' ? STANCES[r.stance].icon : ''}`;
+        gEl.textContent = `${STANCES[r.stance].icon}${STANCES[r.stance].name}`;
       } else gEl.style.display = 'none';
       c.classList.toggle('sel', this.b.controls.selected.has(r.id));
       c.classList.toggle('rout', r.routing && !r.gone);
@@ -515,6 +575,7 @@ export class Hud {
     const w = this.b.world;
     const ctl = this.b.controls;
     this.updateStructBadges();
+    this.updatePlanHandles();
     const seen = new Set<number>();
     // 選取的我軍兵種（相剋提示用）
     const selUnits = [...new Set([...ctl.selected].map((id) => w.regs[id]).filter((r) => r && !r.gone && r.team === w.player).map((r) => r.unit))];
@@ -576,8 +637,34 @@ export class Hud {
     }
   }
 
+  /** 已完成的作戰步驟（完成後不會再變回未完成） */
+  private stepsDone = new Set<number>();
+
   private updateGoals(): void {
     const w = this.b.world;
+    const plan = this.b.sc.plan;
+    if (plan?.length) {
+      plan.forEach((p, i) => {
+        if (this.stepsDone.has(i)) return;
+        try {
+          if (p.done(w)) {
+            this.stepsDone.add(i);
+            if (i === this.curStep()) this.toast(`✅ ${p.text}`, 'good', true);
+          }
+        } catch {
+          /* 條件出錯就當未完成 */
+        }
+      });
+      const cur = this.curStep();
+      const hold = this.b.sc.holdTime ? `<div class="hold">⏳ 堅守 ${Math.max(0, Math.ceil(this.b.sc.holdTime - (w.t - ((w.flags.startT as number) ?? w.t))))} 秒</div>` : '';
+      const rows = plan.map((p, i) => {
+        const done = this.stepsDone.has(i);
+        const now = i === cur;
+        return `<div class="step${done ? ' done' : ''}${now ? ' now' : ''}"><span class="no">${done ? '✓' : i + 1}</span><div><b>${p.text}</b>${now ? `<small>${p.how}</small>` : ''}</div></div>`;
+      });
+      this.goalsEl.innerHTML = `<div class="gt">📋 作戰步驟 <small>（點擊收合）</small></div>${hold}${rows.join('')}`;
+      return;
+    }
     const rows = this.b.sc.stars.map((st) => {
       let ok = false;
       try {
@@ -589,6 +676,13 @@ export class Hud {
     });
     const hold = this.b.sc.holdTime ? `<div class="hold">⏳ 堅守 ${Math.max(0, Math.ceil(this.b.sc.holdTime - (w.t - ((w.flags.startT as number) ?? w.t))))} 秒</div>` : '';
     this.goalsEl.innerHTML = `<div class="gt">🎯 目標 <small>（點擊收合）</small></div>${hold}${rows.join('')}`;
+  }
+
+  /** 目前要做的步驟：第一個還沒完成的 */
+  private curStep(): number {
+    const plan = this.b.sc.plan ?? [];
+    for (let i = 0; i < plan.length; i++) if (!this.stepsDone.has(i)) return i;
+    return plan.length;
   }
 
   // ───────────── 選取資訊 ─────────────
@@ -607,37 +701,28 @@ export class Hud {
     const t = w.teams[r.team];
     const supState = w.supplyOf(r);
     const sup = SUPPLY_EFFECTS[supState];
-    const st = r.morale >= RULES.highThreshold ? '高昂（攻擊 +10%）' : r.morale >= RULES.lowThreshold ? '穩定' : r.morale >= RULES.brokenThreshold ? '低落（受傷 +15%）' : '瓦解（受傷 +30%）';
+    const st = r.morale >= RULES.highThreshold ? '高昂' : r.morale >= RULES.lowThreshold ? '穩定' : r.morale >= RULES.brokenThreshold ? '低落' : '瓦解';
     const stColor = this.moraleColor(r.morale);
-    const supNote = supState === 'ok' ? '' : supState === 'cut' ? '本陣存糧倒數中' : `攻擊 −${Math.round((1 - sup.atk) * 100)}%、受傷 +${Math.round((sup.taken - 1) * 100)}%`;
-    const outNote = r.outT > RULES.outLowSec ? '（深入敵境太久）' : '';
-    const terr: string[] = [];
+    // 只顯示「有影響」的狀態：糧況出問題、地形優劣、增益
+    const notes: string[] = [];
+    if (supState !== 'ok') notes.push(`<span style="color:#ffb04a">${sup.icon}${sup.name}${supState === 'cut' ? '（存糧倒數）' : `：受傷 +${Math.round((sup.taken - 1) * 100)}%`}</span>`);
+    if (t.panicUntil > w.t) notes.push('<span style="color:#ff6a55">😱 軍心大亂</span>');
     const tr = r.terrain;
-    if (tr.high) terr.push(`⛰ 高地${tr.relHeight > 1 ? ` +${tr.relHeight.toFixed(0)}m（近戰 +${Math.round(Math.min(RULES.heightMax, tr.relHeight * RULES.heightPerMeter) * 100)}%）` : ''}`);
-    if (tr.forest) terr.push('🌲 森林（受箭 −30%）');
-    if (tr.wet) terr.push('🌊 涉水（受傷 +25%）');
-    if (tr.camp) terr.push('🏯 營寨（受傷 −25%）');
-    if (tr.road) terr.push('🛣 道路');
-    if (r.inSupply) terr.push('📦 本陣補給（補箭、體力回復 ×1.5）');
-    const ammo = r.ranged ? r.members.reduce((a, i) => a + w.s.ammo[i], 0) / Math.max(1, r.members.length) : -1;
-    const forms: Record<string, string> = { line: '橫陣', square: '方陣', wedge: '鋒矢', loose: '散陣' };
+    if (tr.high && tr.relHeight > 1) notes.push(`⛰ 居高 +${Math.round(Math.min(RULES.heightMax, tr.relHeight * RULES.heightPerMeter) * 100)}%`);
+    if (w.fording(r)) notes.push(`<span style="color:#ff9a8a">🌊 半渡：受傷 +${Math.round(RULES.fordDef * 100)}%、攻擊 −${Math.round((1 - RULES.fordAtk) * 100)}%</span>`);
+    if (tr.forest) notes.push('🌲 森林：受箭 −30%');
+    if (tr.camp) notes.push('🏯 營寨：受傷 −25%');
     const BUFF: Record<string, string> = { drums: '擂鼓', march: '急行軍', gong: '鳴金', berserk: '裸衣', terror: '威震', swift: '巧變', steady: '剛烈', unstoppable: '七進七出', fortify: '堅守', raid: '劫營', fury: '奮戰', peerless: '無雙' };
     const buffs = [...new Set(r.buffs.filter((b) => b.until > w.t).map((b) => BUFF[b.id] ?? b.id))];
+    if (buffs.length) notes.push(`✨ ${buffs.join('、')}`);
     const gen = r.general ? GENERALS[r.general.id] : null;
+    const genState = gen && !r.general!.alive ? (r.general!.fled ? '（已撤退）' : '（陣亡）') : '';
     this.infoEl.style.display = 'block';
     this.infoEl.className = `reginfo${r.team !== w.player ? ' enemy' : ''}`;
-    this.infoEl.innerHTML = `<div class="hd"><b>${r.name}</b><span>${r.unit.name}</span></div>
-      <div class="row"><span>兵力</span><b>${fmt(r.alive * MEN_PER_SOLDIER)}</b><small>／${fmt(r.initial * MEN_PER_SOLDIER)}</small></div>
-      <div class="row"><span>相剋</span><b style="color:#8fe36a">剋 ${CTR[r.unit.cls][0]}</b><small style="color:#ff9a8a">怕 ${CTR[r.unit.cls][1]}</small></div>
-      ${r.group ? `<div class="row"><span>分組</span><b style="color:${GROUPS[r.group].color}">${GROUPS[r.group].name}</b><small>${r.stance !== 'free' ? `${STANCES[r.stance].icon} ${STANCES[r.stance].name}` : '手動操作'}</small></div>` : ''}
-      <div class="row"><span>士氣</span><b style="color:${stColor}">${Math.round(r.morale)} ${st}</b></div>
-      ${r.stamina < 30 ? `<div class="row"><span>體力</span><b>${Math.round(r.stamina)}</b><small style="color:#ffc24a">疲憊：攻防 −15%</small></div>` : ''}
-      ${ammo >= 0 ? `<div class="row"><span>箭矢</span><b>${ammo.toFixed(0)}</b><small>輪</small></div>` : ''}
-      <div class="row"><span>陣型</span><b>${forms[r.formation]}</b>${r.hold ? '<small>🛡 堅守</small>' : ''}${r.run ? '<small>🏃 奔跑</small>' : ''}</div>
-      <div class="row"><span>糧況</span><b>${sup.icon}${sup.name}${outNote}</b>${supNote ? `<small style="color:#ffc24a">${supNote}</small>` : ''}${t.panicUntil > w.t ? '<small style="color:#ff6a55">😱 軍心大亂</small>' : ''}</div>
-      ${terr.length ? `<div class="row t">${terr.join('<br>')}</div>` : ''}
-      ${gen ? `<div class="row t">⭐ ${gen.name}（武${gen.war} 統${gen.lead} 智${gen.int}）${r.general!.alive ? '' : r.general!.fled ? '<b style="color:#ffc24a">已撤退</b>' : '<b style="color:#ff6a55">陣亡</b>'}</div>` : ''}
-      ${buffs.length ? `<div class="row t">✨ ${buffs.join('、')}</div>` : ''}`;
+    this.infoEl.innerHTML = `<div class="hd"><b>${gen ? `⭐ ${gen.name}${genState}` : r.name}</b><span>${r.unit.icon} ${r.unit.name}</span></div>
+      <div class="row"><span>兵力</span><b>${fmt(r.alive * MEN_PER_SOLDIER)}</b><span>士氣</span><b style="color:${stColor}">${st}</b></div>
+      <div class="row"><b style="color:#8fe36a">剋 ${CTR[r.unit.cls][0]}</b>　<b style="color:#ff9a8a">怕 ${CTR[r.unit.cls][1]}</b></div>
+      ${notes.length ? `<div class="row t">${notes.join('<br>')}</div>` : ''}`;
   }
 
   // ───────────── 指令列 ─────────────
@@ -677,56 +762,8 @@ export class Hud {
         this.refreshGroups();
       }, `stance st-${st}`);
     }
-    // 分組
-    bar.appendChild(el('div', 'sep'));
-    for (const g of GROUP_ORDER) {
-      const e = btn(GROUPS[g].short, `編入${GROUPS[g].name}`, all((r) => r.group === g), () => this.setGroup(ids, g), 'grpbtn');
-      e.style.setProperty('--gc', GROUPS[g].color);
-    }
-    bar.appendChild(el('div', 'sep'));
-    btn('🏃 奔跑', '奔跑移動：快 50%，消耗體力（R）', all((r) => r.run), () => {
-      const v = !all((r) => r.run);
-      for (const r of regs) r.run = v;
-    });
-    btn('✋ 停止', '停止（H）', false, () => {
-      w.commandHalt(ids);
-      for (const r of regs) r.stance = 'free';
-    });
-    btn('🛡 堅守', '堅守：不追擊；長槍兵擺出拒馬陣，騎兵正面衝鋒反吃三倍傷害（G）', all((r) => r.hold), () => {
-      const v = !all((r) => r.hold);
-      for (const r of regs) r.hold = v;
-      if (v) audio.voice('ack_hold');
-    });
-    const forms: Record<Regiment['formation'], [string, string]> = {
-      line: ['橫陣', '接觸面最大（預設）'],
-      square: ['方陣', '側擊背襲懲罰減半、移動 −15%'],
-      wedge: ['鋒矢', '騎兵衝鋒 +30%'],
-      loose: ['散陣', '受箭傷 −40%、近戰防禦 −20%'],
-    };
-    const order: Regiment['formation'][] = ['line', 'square', 'wedge', 'loose'];
-    const cur = regs[0].formation;
-    btn(`陣型：${forms[cur][0]} ▸`, `切換陣型（T）：${order.map((f) => `${forms[f][0]}＝${forms[f][1]}`).join('；')}`, false, () => {
-      const nx = order[(order.indexOf(cur) + 1) % order.length];
-      w.setFormation(ids, nx);
-    });
-    if (regs.some((r) => r.ranged)) {
-      bar.appendChild(el('div', 'sep'));
-      btn('🎯 自由射擊', '自動射擊射程內最近的敵軍（F）', all((r) => !r.ranged || r.fireAtWill), () => {
-        const v = !all((r) => !r.ranged || r.fireAtWill);
-        for (const r of regs) r.fireAtWill = v;
-      });
-      btn('🔥 火矢', '改射火矢：可點燃糧倉與營寨', all((r) => !r.ranged || r.fireArrows), () => {
-        const v = !all((r) => !r.ranged || r.fireArrows);
-        for (const r of regs) if (r.ranged) r.fireArrows = v;
-      });
-    }
-    bar.appendChild(el('div', 'sep'));
-    btn('🏯 撤回本陣', '有序撤回本陣（Backspace）', false, () => {
-      w.commandRetreat(ids);
-      for (const r of regs) r.stance = 'free';
-      audio.voice('ack_retreat');
-    }, 'red');
-    for (const r of regs) {
+    // 武將技（最多兩位，避免按鈕太多）
+    for (const r of regs.filter((x) => x.general?.alive).slice(0, 2)) {
       if (!r.general?.alive || this.b.phase !== 'battle') continue;
       const gd = GENERALS[r.general.id];
       if (!gd.ability) continue;
@@ -1134,6 +1171,7 @@ export class Hud {
     this.slowAcc = 0;
     this.slowT++;
     this.deployEl.style.display = b.phase === 'deploy' ? '' : 'none';
+    this.root.classList.toggle('deploying', b.phase === 'deploy');
     // 指令列出現時，部署面板往上讓位
     if (b.phase === 'deploy') this.deployEl.style.bottom = this.cmdbar.style.display === 'none' ? '' : `${138 + this.cmdbar.offsetHeight + 6}px`;
     // 戰鬥結束後時鐘停住

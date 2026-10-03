@@ -72,12 +72,12 @@ export const UNITS: Record<UnitTypeId, UnitDef> = {
   },
   cav: {
     id: 'cav', name: '騎兵', short: '騎兵', model: 'lightcav', count: 60, hp: 160, atk: 12, def: 8, walk: 5.6, run: 10.5, mounted: true,
-    charge: 26, reach: 2.3, cls: 'cav', vsCav: 1, front: 0.9, shield: 0.1, spacing: [1.95, 2.9], width: 12, morale: 72, rate: 1.05, icon: '🐎',
+    charge: 26, reach: 2.3, cls: 'cav', vsCav: 1, front: 0.9, shield: 0.1, spacing: [1.35, 2.5], width: 15, morale: 72, rate: 1.05, icon: '🐎',
     desc: '機動與衝擊：從側面、背後衝鋒最致命（正面衝列陣步兵只剩一半）；斷糧道、截輜重、縱火燒糧（×3）。剋弓兵，怕長槍。',
   },
   guard: {
     id: 'guard', name: '親衛隊', short: '親衛', model: 'heavycav', count: 50, hp: 170, atk: 14, def: 12, walk: 5.2, run: 9.5, mounted: true,
-    charge: 26, reach: 2.4, cls: 'cav', vsCav: 1, front: 0.85, shield: 0, spacing: [2.0, 3.0], width: 8, morale: 85, rate: 1.05, icon: '⭐',
+    charge: 26, reach: 2.4, cls: 'cav', vsCav: 1, front: 0.85, shield: 0, spacing: [1.4, 2.6], width: 12, morale: 85, rate: 1.05, icon: '⭐',
     desc: '武將的親衛騎兵，跟著武將衝鋒陷陣。',
   },
 };

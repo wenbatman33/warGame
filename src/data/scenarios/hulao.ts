@@ -112,6 +112,12 @@ export const HULAO: Scenario = {
     // 呂布不和劉關張單打獨鬥：要兩人合擊才觸發三英戰呂布
     w.duelBan = (a, b) => (a === 'lvbu' && SANYING.includes(b)) || (b === 'lvbu' && SANYING.includes(a));
   },
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '長槍擋住西涼鐵騎', how: '<b>長槍兵</b>放最前面按「🛡 固守」：騎兵衝過來會被拒馬反傷三倍。弓兵放後面。', done: (w) => (w.started ? w.t - ((w.flags.startT as number) ?? 0) : 0) > 70 },
+    { text: '三英戰呂布', how: '選<b>劉備、關羽、張飛</b>中的兩人 → 右鍵點<b>呂布</b>。兩人同時靠近就觸發三英戰呂布，呂布敗走。', done: (w) => !!w.flags.sanying },
+    { text: '攻破虎牢關', how: '選全軍按「⚔ 推進」：逼退董卓（敵軍主帥）或攻陷關口就贏。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰董卓軍或攻破虎牢關', check: (w) => w.winner === 0 },
     { text: '三英戰呂布', check: (w) => !!w.flags.sanying },

@@ -245,9 +245,15 @@ export class PlayerTactics {
     const foot = mates.filter((m) => !m.unit.mounted && !m.ranged);
     const avg = (foot.length ? foot : mates).reduce((a, m) => a + prog(m), 0) / Math.max(1, (foot.length ? foot : mates).length);
     const mine = prog(r);
-    // 弓兵保持在步兵後方 25 m；其他不超前 15 m
+    // 弓兵保持在步兵後方 25 m（平穩跟進，不走走停停）；其他不超前 15 m
     const limit = r.ranged ? avg - 25 : avg + 15;
-    if (mine > limit && mates.length > 1) {
+    if (r.ranged && mates.length > 1) {
+      if (mine > limit + 10) {
+        if (r.order.type === 'move') w.commandHalt([r.id]);
+        return;
+      }
+      if (limit - mine < 15) return;
+    } else if (mine > limit && mates.length > 1) {
       if (r.order.type === 'move') w.commandHalt([r.id]);
       return;
     }

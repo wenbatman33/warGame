@@ -125,6 +125,11 @@ export const JIETING: Scenario = {
       ],
     },
   ],
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '奪取水源', how: '派<b>步兵與騎兵</b>趕走山腳水源的汲水隊，在水源旁駐守 20 秒——水源就是蜀軍的糧道。', done: (w) => typeof w.flags.waterT === 'number' },
+    { text: '山下迎擊', how: '蜀軍斷水後會下山突圍：在平地按「🛡 固守」迎擊，別仰攻上山。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰蜀軍', check: (w) => w.winner === 0 },
     { text: '開戰 4 分鐘內奪取水源', check: (w) => typeof w.flags.waterT === 'number' && (w.flags.waterT as number) <= 240 },

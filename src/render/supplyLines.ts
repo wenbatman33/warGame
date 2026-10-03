@@ -33,6 +33,7 @@ void main() {
 
 interface Line {
   st: Structure;
+  route: [number, number][];
   mesh: THREE.Mesh;
   mat: THREE.ShaderMaterial;
   base: THREE.Color;
@@ -47,6 +48,8 @@ export class SupplyLines {
   private marks = new Map<number, THREE.Sprite>();
   private markTex: THREE.CanvasTexture;
   private time = 0;
+  /** 部署階段（規劃糧道）：我軍糧道加寬加亮 */
+  planning = false;
 
   constructor(private world: World) {
     this.markTex = makeMarkTexture();
@@ -68,7 +71,7 @@ export class SupplyLines {
         mesh.renderOrder = 4;
         mesh.frustumCulled = false;
         this.group.add(mesh);
-        this.lines.push({ st, mesh, mat, base });
+        this.lines.push({ st, route: st.route, mesh, mat, base });
       }
     }
   }
@@ -120,6 +123,12 @@ export class SupplyLines {
     const w = this.world;
     for (const L of this.lines) {
       const st = L.st;
+      // 路線改了（玩家部署糧道）：重建色帶
+      if (L.route !== st.route) {
+        L.mesh.geometry.dispose();
+        L.mesh.geometry = this.ribbon(st.route, 3.2);
+        L.route = st.route;
+      }
       const lost = st.burnt || st.team !== st.owner;
       const u = L.mat.uniforms;
       if (lost) {
@@ -137,7 +146,7 @@ export class SupplyLines {
         u.uTime.value = this.time;
       } else {
         u.uColor.value.copy(L.base);
-        u.uOpacity.value = 0.75;
+        u.uOpacity.value = this.planning && st.team === w.player ? 1 : 0.75;
         u.uTime.value = this.time;
       }
       // 斷點標記

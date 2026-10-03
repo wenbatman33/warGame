@@ -106,6 +106,12 @@ export const CHANGBAN: Scenario = {
       ],
     },
   ],
+  plan: [
+    { text: '橋頭佈陣', how: '<b>長槍兵</b>堵在橋頭按「🛡 固守」，<b>弓兵</b>放兩側射擠在橋上的敵軍。', done: (w) => w.started },
+    { text: '接應趙雲', how: '選<b>趙雲</b> → 右鍵點南岸我軍陣地，讓他殺回來。', done: (w) => w.regs.some((r) => r.general?.id === 'zhaoyun' && r.general.alive && r.mz > 25) },
+    { text: '長坂怒吼', how: '曹軍擠上橋時，選<b>張飛</b>按「⭐ 長坂怒吼」：45 m 內敵軍士氣重挫、定身 3 秒。', done: (w) => w.regs.some((r) => r.general?.id === 'zhangfei' && r.general.cd > w.t + 1) },
+    { text: '堅守 5 分鐘', how: '守住橋頭與東邊淺灘，時間到就贏。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '堅守 5 分鐘', check: (w) => w.winner === 0 },
     { text: '接應趙雲回到南岸', check: (w) => w.regs.some((r) => r.general?.id === 'zhaoyun' && r.general.alive && !r.routing && !r.gone && r.mz > 25) },

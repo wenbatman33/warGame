@@ -12,8 +12,8 @@ export const DINGJUN: Scenario = {
     '夜裡劉備火燒鹿角，夏侯淵親率輕兵修補南圍。法正望見時機：「可擊矣！」',
     '黃忠將軍，我軍居高臨下——擂鼓吶喊，從山上俯衝而下，斬殺夏侯淵！',
   ],
-  goals: ['擊潰魏軍', '斬殺夏侯淵（他在山腳修補鹿角，身邊兵少）', '善用地形：居高臨下近戰最多 +30%、往下坡衝鋒 +30%'],
-  tip: '別急著下山：先用弓弩從山上射擊（射程 +25%）。等夏侯淵靠近山腳，再讓黃忠與騎兵沿山坡俯衝。按「🗺 地形」看坡度。',
+  goals: ['斬殺或逼退夏侯淵（敵軍主帥）', '據山不出，讓魏軍仰攻自損', '善用地形：居高臨下近戰最多 +45%、往下坡衝鋒 +30%'],
+  tip: '別急著下山：魏軍 150 秒後會全軍仰攻，在山上固守、弓兵居高射擊（射程 +25%）。魏軍攻勢減弱後，黃忠與騎兵沿山坡俯衝，直取夏侯淵。',
   time: 'dusk',
   camera: { x: 0, z: 150, dist: 230 },
   map: {
@@ -95,8 +95,8 @@ export const DINGJUN: Scenario = {
       ],
       ai: { plan: 'defend', aggression: 0.6, raid: true, startDelay: 30, attackAfter: 150 },
       regiments: [
-        // 夏侯淵帶少數輕兵在山腳修鹿角
-        { type: 'guard', x: 60, z: -55, general: 'xiahouyuan', name: '夏侯淵部', role: 'hold' },
+        // 夏侯淵坐鎮後方：先撐過魏軍仰攻，再突破過去斬將
+        { type: 'guard', x: 40, z: -150, general: 'xiahouyuan', name: '夏侯淵部', role: 'hold' },
         { type: 'sword', x: 90, z: -35, count: 90, name: '修補鹿角的輕兵', role: 'hold', morale: 60 },
         { type: 'guard', x: -120, z: -120, general: 'zhanghe', name: '張郃部' },
         { type: 'sword', x: -60, z: -90 },
@@ -116,6 +116,11 @@ export const DINGJUN: Scenario = {
     // 史實：黃忠於定軍山斬夏侯淵
     w.duelFate = (a, b) => ((a === 'huangzhong' && b === 'xiahouyuan') || (a === 'xiahouyuan' && b === 'huangzhong') ? { winner: 'huangzhong', killed: true } : null);
   },
+  plan: [
+    { text: '部署糧道', how: '開戰前：拖曳地圖上的 <b>🍚</b> 標記，或在下方面板選「官道／前線捷徑／後方小路」決定補給路線。', done: (w) => !!w.flags.did_route || w.started },
+    { text: '據山不出', how: '全軍在山上按「🛡 固守」，讓魏軍仰攻（他們近戰最多 −35%、士氣持續下滑）。', done: (w) => (w.started ? w.t - ((w.flags.startT as number) ?? 0) : 0) > 160 },
+    { text: '斬夏侯淵', how: '魏軍攻勢減弱後，選<b>黃忠</b> → 右鍵點<b>夏侯淵</b>（敵軍主帥）。靠近就會單挑，史實上黃忠一刀斬之。', done: (w) => w.winner === 0 },
+  ],
   stars: [
     { text: '擊潰魏軍', check: (w) => w.winner === 0 },
     { text: '斬殺夏侯淵', check: (w) => w.regs.some((r) => r.general?.id === 'xiahouyuan' && !r.general.alive && !r.general.fled) },
@@ -133,7 +138,7 @@ export const DINGJUN: Scenario = {
   ],
   advisor: { name: '法正', portrait: 'hero/hero_fazheng.jpg' },
   hints: [
-    { at: -1, text: '漢升，我軍<b>居高臨下</b>：近戰最多 +30%、弓弩射程 +25%、<b>往下坡衝鋒 +30%</b>。按「🗺 地形」看看山勢。' },
+    { at: -1, text: '漢升，我軍<b>居高臨下</b>：近戰最多 +45%、弓弩射程 +25%、<b>往下坡衝鋒 +30%</b>。按「🗺 地形」看看山勢。' },
     { at: 8, text: '先讓<b>弓弩</b>從山上射擊山腳的魏軍。夏侯淵在<b>南圍鹿角</b>附近修補柵欄，身邊兵少。' },
     { at: 30, text: '<b>可擊矣！</b>選黃忠與騎兵，右鍵點<b>夏侯淵</b>——沿著山坡俯衝下去！' },
     { when: (w) => w.regs.some((r) => r.team === 1 && !r.gone && !r.routing && r.terrain.relHeight < -6 && r.engagedWith.size > 0), text: '魏軍在<b>仰攻</b>我軍！他們近戰吃虧，守住山頭就是勝利。' },

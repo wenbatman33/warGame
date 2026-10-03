@@ -6,6 +6,7 @@ import { World } from '../src/sim/world';
 import { AiCommander } from '../src/ai/commander';
 import { GUANDU } from '../src/data/scenarios/guandu';
 import { CAMPAIGN } from '../src/data/scenarios/index';
+import { PlayerTactics } from '../src/game/tactics';
 
 const RUN = !!(globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BALANCE;
 
@@ -125,8 +126,8 @@ describe.runIf(RUN)('平衡', () => {
     const w = new World(sc, generateHeightfield(sc.map));
     w.setDifficulty('normal');
     const ai = new AiCommander(w, 1, sc.teams[1].ai!, 'normal');
-    // 前線：防守 AI 指揮（會支援、轉向）；奇兵：照劇本燒烏巢
-    const me = new AiCommander(w, 0, { plan: 'defend', raid: false, startDelay: 0 }, 'normal');
+    // 前線：玩家的戰線指令「固守」；奇兵：照劇本燒烏巢
+    const tac = new PlayerTactics(w, 0);
     w.started = true;
     w.flags.startT = 0;
     const raid = w.regs.filter((r) => r.team === 0 && (r.name.startsWith('輕騎') || r.name === '許褚虎衛')).map((r) => r.id);
@@ -136,19 +137,24 @@ describe.runIf(RUN)('平衡', () => {
       w.regs[id].ai.homeX = wu.x;
       w.regs[id].ai.homeZ = wu.z;
     }
-    const spots: Record<string, [number, number]> = { 青州兵: [-12, 26], 中軍刀盾: [24, 26], 長槍營: [-48, 34], 右翼長槍: [60, 34], 弓手營: [-20, 58], 強弓營: [24, 58], 弩營: [2, 74], 虎豹騎: [-110, 70] };
+    // 防線貼著南岸水邊（中央淺灘的水邊約在 z≈−5～0）
+    const spots: Record<string, [number, number]> = { 青州兵: [-14, 6], 中軍刀盾: [22, 2], 長槍營: [-50, 10], 右翼長槍: [58, -2], 弓手營: [-20, 30], 強弓營: [24, 28], 弩營: [2, 44], 虎豹騎: [-110, 60] };
     for (const r of w.regs.filter((x) => x.team === 0 && !raid.includes(x.id) && !x.general)) {
       const p = spots[r.name];
       if (!p) continue;
       w.commandMove([r.id], p[0], p[1], Math.PI);
-      r.ai.homeX = p[0];
-      r.ai.homeZ = p[1];
     }
+    let held = false;
     const step = (sec: number) => {
       for (let k = 0; k < sec * 30 && !w.over; k++) {
         w.step();
         ai.update();
-        me.update();
+        tac.update();
+        // 就位後全線固守
+        if (!held && w.t > 25) {
+          held = true;
+          tac.setStance(w.regs.filter((x) => x.team === 0 && !raid.includes(x.id) && !x.general && !x.gone).map((x) => x.id), 'hold');
+        }
         w.events = [];
       }
     };
