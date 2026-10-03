@@ -24,6 +24,8 @@ export class RtsCamera {
   private groundY = 0;
   /** 鏡頭震動（衝鋒、爆燃） */
   shake = 0;
+  /** 固定俯角（度）：地點地圖玩法用較俯視的棋盤視角；null＝依距離自動 */
+  pitchOverride: number | null = null;
 
   constructor(
     private cam: THREE.PerspectiveCamera,
@@ -43,6 +45,7 @@ export class RtsCamera {
   }
 
   get pitch(): number {
+    if (this.pitchOverride !== null) return THREE.MathUtils.degToRad(this.pitchOverride);
     const t = (this.dist - CAM.minDist) / (CAM.maxDist - CAM.minDist);
     const e = Math.sqrt(THREE.MathUtils.clamp(t, 0, 1));
     return THREE.MathUtils.degToRad(THREE.MathUtils.lerp(CAM.pitchNear, CAM.pitchFar, e));

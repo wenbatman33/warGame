@@ -311,3 +311,76 @@ body.picking canvas { cursor: crosshair; }
   .deploy .splan { font-size: 10px; padding: 4px 8px; max-width: 70vw; }
   .deploy .splan .sn { display: none; }
 }
+
+/* ───── 地點地圖玩法（手指滑動指揮） ───── */
+.nodemode .cmdbar, .nodemode .bottom, .nodemode .deploy, .nodemode .reginfo, .nodemode .cmdpts, .nodemode .terrain-tip, .nodemode .minimap, .nodemode .supply, .nodemode .sbadge { display: none !important; }
+.nodehud { position: fixed; inset: 0; pointer-events: none; z-index: 9; font-family: 'Noto Sans TC', 'PingFang TC', sans-serif; }
+.nsvg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.nsvg path { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)); }
+.nsvg path.mv { stroke: #6cff8a; stroke-dasharray: 10 7; }
+.nsvg path.att { stroke: #ffd24a; }
+.nsvg path.lure { stroke: #ffb02e; stroke-dasharray: 4 6; }
+.nsvg path.ret { stroke: #bbb; stroke-dasharray: 3 6; }
+.nsvg path.foe { stroke: #ff5a45; stroke-dasharray: 8 8; stroke-width: 3; opacity: 0.85; }
+.nsvg path.drag { stroke-width: 7; animation: ndash 0.6s linear infinite; stroke-dasharray: 14 8; }
+.nsvg path.pv-hi { stroke: #6cff6a; }
+.nsvg path.pv-mid { stroke: #ffd24a; }
+.nsvg path.pv-lo { stroke: #ff4a3a; }
+.nsvg .ah { stroke: none; }
+.nsvg .ah.mv { fill: #6cff8a; } .nsvg .ah.att { fill: #ffd24a; } .nsvg .ah.lure { fill: #ffb02e; } .nsvg .ah.ret { fill: #bbb; } .nsvg .ah.foe { fill: #ff5a45; }
+.nsvg .ah.pv-hi { fill: #6cff6a; } .nsvg .ah.pv-mid { fill: #ffd24a; } .nsvg .ah.pv-lo { fill: #ff4a3a; }
+@keyframes ndash { to { stroke-dashoffset: -22; } }
+.nlabel { position: absolute; left: 0; top: 0; width: 60px; text-align: center; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; }
+.nlabel b { font-weight: 900; }
+.nlabel .ti { margin-right: 2px; }
+.nlabel.fire b { color: #ffb02e; }
+.nlabel.pick b { color: #ffe14a; font-size: 14px; }
+.ndrag { position: absolute; left: 0; top: 0; display: none; min-width: 190px; max-width: 240px; background: rgba(20, 15, 10, 0.92); border: 2px solid #000; border-radius: 12px; padding: 7px 10px; color: #fff; font-size: 12px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5); }
+.ndrag .t { font-weight: 900; font-size: 14px; color: #ffe39a; }
+.ndrag .ch { font-weight: 900; font-size: 18px; margin: 2px 0; }
+.ndrag .ch.hi { color: #6cff6a; } .ndrag .ch.mid { color: #ffd24a; } .ndrag .ch.lo { color: #ff5a45; }
+.ndrag .ls { color: #ddd; }
+.ndrag .fx { color: #bbb; font-size: 11px; margin-top: 3px; line-height: 1.45; }
+.ndrag .fx.good { color: #7dff6a; font-weight: 900; }
+.ndrag .hint { color: #888; font-size: 10px; margin-top: 4px; }
+.ninfo { position: absolute; left: 10px; bottom: 12px; display: none; width: 230px; background: var(--panel, rgba(30, 24, 18, 0.92)); border: 2px solid #000; border-radius: 12px; padding: 7px 10px; color: #fff; font-size: 12px; pointer-events: auto; box-shadow: 0 3px 0 #000; }
+.ninfo .hd { font-weight: 900; font-size: 15px; color: #ffe39a; display: flex; justify-content: space-between; }
+.ninfo .hd span { font-size: 11px; color: #ccc; font-weight: 700; }
+.ninfo .row { display: flex; gap: 6px; align-items: baseline; margin-top: 2px; }
+.ninfo .row span { color: #aaa; width: 30px; }
+.ninfo .row small { color: #999; }
+.ninfo .good { color: #8fe36a; } .ninfo .bad { color: #ff8a7a; }
+.ninfo .tip { margin-top: 4px; color: #888; font-size: 10px; }
+.ncards { position: absolute; right: 10px; bottom: 12px; display: flex; gap: 6px; align-items: flex-end; pointer-events: auto; }
+.ncmd { align-self: center; color: #ffe39a; font-weight: 900; font-size: 13px; margin-right: 4px; }
+.ncard { width: 64px; height: 80px; border-radius: 10px; border: 2px solid #000; background: linear-gradient(#a65bd6, #5a2f8c); box-shadow: 0 3px 0 #000, inset 0 2px 0 rgba(255, 255, 255, 0.3); position: relative; cursor: grab; touch-action: none; user-select: none; }
+.ncard .ic { position: absolute; left: 0; right: 0; top: 8px; text-align: center; font-size: 30px; }
+.ncard .nm { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 12px; font-weight: 900; color: #fff; }
+.ncard .co { position: absolute; right: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%; background: #2f7be8; border: 2px solid #000; color: #fff; font-weight: 900; font-size: 12px; display: grid; place-items: center; }
+.ncard.dis { filter: grayscale(1) brightness(0.6); }
+.nghost { position: absolute; left: 0; top: 0; width: 56px; height: 56px; display: none; place-items: center; font-size: 38px; border-radius: 50%; background: rgba(255, 210, 74, 0.35); border: 2px solid #ffe14a; }
+.nstart { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto; background: radial-gradient(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.55)); }
+.nstart .box { background: rgba(24, 18, 10, 0.95); border: 3px solid #000; border-radius: 16px; padding: 14px 18px; color: #fff; max-width: min(460px, 92vw); box-shadow: 0 6px 0 rgba(0, 0, 0, 0.6), inset 0 0 0 2px #b8862b; }
+.nstart h3 { margin: 0 0 8px; color: #ffe39a; font-size: 20px; }
+.nstart .row { display: flex; gap: 10px; margin: 5px 0; font-size: 13px; }
+.nstart .row b:first-child { flex: 0 0 150px; color: #ffe39a; }
+.nstart p { font-size: 12px; color: #ccc; margin: 10px 0; }
+.nstart .gobtns { display: flex; gap: 10px; justify-content: center; margin-top: 8px; }
+.nstart .gobtns .btn { font-size: 16px; padding: 8px 16px; }
+.nstart .gobtns .go { font-size: 18px; }
+/* 開戰鈕放左下角的空地（不要蓋住部隊與地點，手指才拖得到） */
+.nodehud .ngo { position: absolute; left: 16px; bottom: 18px; font-size: 22px; padding: 10px 26px; pointer-events: auto; animation: ngopulse 1.2s ease-in-out infinite; }
+/* 開戰鈕還在時，部隊資訊往上移、不要蓋住它 */
+.nodehud:has(.ngo) .ninfo { bottom: 78px; }
+@keyframes ngopulse { 50% { box-shadow: 0 3px 0 #000, 0 0 22px #7dff6a; } }
+.npaused { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); color: #ffe39a; font-weight: 900; font-size: 14px; background: rgba(0, 0, 0, 0.5); padding: 3px 12px; border-radius: 10px; }
+@media (max-width: 820px), (max-height: 500px) {
+  .nstart .row b:first-child { flex-basis: 120px; }
+  .nstart .row { font-size: 11px; }
+  .ncard { width: 52px; height: 66px; }
+  .ncard .ic { font-size: 24px; }
+  .ninfo { width: 190px; font-size: 11px; }
+  .nodehud .ngo { font-size: 17px; padding: 8px 16px; left: 10px; }
+  /* 作戰步驟不要壓到下方計策卡 */
+  .nodemode .goalbox { max-height: calc(100vh - 150px); overflow-y: auto; }
+}

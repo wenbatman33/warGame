@@ -10,7 +10,7 @@ export type AiRole = 'line' | 'ranged' | 'flank' | 'reserve' | 'guard' | 'raider
 /** 玩家戰線分組 */
 export type GroupId = 'left' | 'center' | 'right' | 'strike' | 'reserve';
 /** 戰線指令（整組戰術姿態）；free＝玩家逐團手動操作 */
-export type Stance = 'free' | 'hold' | 'advance' | 'retreat' | 'flank';
+export type Stance = 'free' | 'hold' | 'advance' | 'retreat' | 'flank' | 'lure';
 
 export interface Order {
   type: OrderType;
@@ -138,6 +138,17 @@ export class Regiment {
   movedT = -99;
   /** 最近一次「列陣擋下」正面攻擊的時間（戰場提示用） */
   holdBlockT = -99;
+  /** 最近一次處於隱藏（敵軍看不見）的時間：從隱藏中殺出＝伏擊 */
+  concealedT = -99;
+  /** 中伏的時間（12 秒內受傷大增、攻擊下降、不能列陣） */
+  ambushedT = -99;
+  /** 最近一次伏擊得手的時間（戰場提示用） */
+  ambushDealT = -99;
+  /** 最近一次身陷火場的時間 */
+  burnT = -99;
+  /** 誘敵：go＝上前挑釁、back＝退回陷阱點 */
+  lureStage: 'go' | 'back' = 'go';
+  lureT = 0;
   ai: { role: AiRole; anchorX: number; anchorZ: number; waitUntil: number; homeX: number; homeZ: number; targetT: number } = {
     role: 'line',
     anchorX: 0,

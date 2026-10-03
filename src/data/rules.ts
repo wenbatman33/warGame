@@ -127,6 +127,16 @@ export const RULES = {
   fordArrow: 1.3,
   /** 弓兵停下後架弓才能放箭（秒） */
   aimDelay: 1.2,
+  /** 伏擊：從隱藏中殺出 → 目標中伏（士氣衝擊、持續秒數、受傷倍率、攻擊倍率） */
+  ambushShock: 20,
+  ambushTime: 12,
+  ambushTaken: 1.35,
+  ambushAtk: 0.8,
+  /** 火場：每秒點燃機率、每次傷害、士氣流失、蔓延機率 */
+  fireHitChance: 0.3,
+  fireDmg: 18,
+  fireMorale: 3,
+  fireSpread: 0.35,
   /** 列陣迎敵（防守方）：站穩秒數、正面受傷倍率、反擊倍率 */
   formTime: 3,
   holdDef: 0.7,

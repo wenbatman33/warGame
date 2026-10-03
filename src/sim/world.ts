@@ -31,6 +31,7 @@ export type GameEvent =
   | { k: 'generalRetreat'; reg: number; name: string }
   | { k: 'lineCut'; team: number; x: number; z: number; burnt: boolean }
   | { k: 'lineRestored'; team: number }
+  | { k: 'ambush'; reg: number; by: number }
   | { k: 'ignite'; s: number }
   | { k: 'burnt'; s: number }
   | { k: 'wagonLost'; team: number }
@@ -90,6 +91,17 @@ export class World {
   rng: () => number;
   /** 視角隊伍（玩家） */
   readonly player = 0;
+  /** 行軍速度倍率（地點地圖玩法節奏較快） */
+  speedMul = 1;
+  /** 上層玩法掛載的物件（例：地點地圖的規則核心） */
+  ext: Record<string, unknown> = {};
+  /** 演出模式（地點地圖玩法）：士兵照樣行軍、交戰、播動作，但傷亡、士氣、勝負由上層規則決定 */
+  presentation = false;
+  /** 演出模式：兩個軍團（id）的士兵可不可以互砍（由上層規則決定誰在交戰） */
+  canFight: ((a: number, b: number) => boolean) | null = null;
+  private forceDmg = false;
+  /** 地面火場（火攻）：持續燃燒、沿草木蔓延 */
+  readonly fires: { x: number; z: number; r: number; until: number; team: number }[] = [];
   /** 劇本自訂旗標 */
   flags: Record<string, number | boolean> = {};
   private triggered = new Set<number>();
@@ -473,17 +485,23 @@ export class World {
     this.separate();
     this.stepProjectiles();
     this.updateDying();
-    if (this.tick % 3 === 0) this.stepMorale(dt * 3);
+    if (this.tick % 3 === 0 && !this.presentation) this.stepMorale(dt * 3);
     if (this.tick % 30 === 0) {
-      this.stepSupply(1);
-      this.stepResupply();
-      if (this.started) {
-        this.stepStructures(1);
-        this.stepCommand(1);
+      if (this.presentation) {
+        // 演出模式：只讓火場到期消失（傷害由上層規則處理）
+        for (let i = this.fires.length - 1; i >= 0; i--) if (this.fires[i].until <= this.t) this.fires.splice(i, 1);
+      } else {
+        this.stepSupply(1);
+        this.stepResupply();
+        if (this.started) {
+          this.stepStructures(1);
+          this.stepCommand(1);
+        }
+        this.stepFires(1);
+        this.checkEnd();
+        this.runTriggers();
+        this.checkDuels();
       }
-      this.checkEnd();
-      this.runTriggers();
-      this.checkDuels();
       for (const r of this.regs) {
         r.engagedWith.clear();
         r.flankHits = 0;
@@ -514,7 +532,7 @@ export class World {
     sp *= SUPPLY_EFFECTS[this.supplyOf(r)].speed;
     if (r.stamina < 30) sp *= 0.8;
     if (r.formation === 'square') sp *= 0.85;
-    sp *= r.buffMul('speed', this.t) * this.wx.speed;
+    sp *= r.buffMul('speed', this.t) * this.wx.speed * this.speedMul;
     return sp;
   }
 
@@ -673,7 +691,7 @@ export class World {
 
   /** 列陣迎敵：站穩（3 秒沒移動）、沒有在進攻或行軍的步兵＝防守方 */
   defending(r: Regiment): boolean {
-    return !r.unit.mounted && r.order.type !== 'attack' && r.order.type !== 'move' && r.order.type !== 'retreat' && this.t - r.movedT > RULES.formTime;
+    return !r.unit.mounted && r.order.type !== 'attack' && r.order.type !== 'move' && r.order.type !== 'retreat' && this.t - r.movedT > RULES.formTime && !this.ambushed(r);
   }
 
   nearestEnemyInRange(r: Regiment, range: number): number {
@@ -977,8 +995,9 @@ export class World {
   private meleeTarget(i: number, r: Regiment, slotX: number, slotZ: number): number {
     const s = this.s;
     let tg = s.target[i];
+    const allowed = (j: number) => !this.canFight || this.canFight(r.id, s.reg[j]);
     if (tg >= 0) {
-      const ok = s.state[tg] === SState.Alive && s.team[tg] !== s.team[i] && Math.hypot(s.x[tg] - slotX, s.z[tg] - slotZ) < RULES.tether + (r.unit.mounted ? 6 : 0);
+      const ok = s.state[tg] === SState.Alive && s.team[tg] !== s.team[i] && Math.hypot(s.x[tg] - slotX, s.z[tg] - slotZ) < RULES.tether + (r.unit.mounted ? 6 : 0) && allowed(tg);
       if (!ok) tg = s.target[i] = -1;
     }
     if (r.nearEnemies.length === 0 || r.order.type === 'retreat') {
@@ -999,7 +1018,7 @@ export class World {
     const prefer = r.order.type === 'attack' ? r.order.target : -1;
     for (let k = 0; k < n; k++) {
       const j = res[k];
-      if (s.team[j] === team || s.state[j] !== SState.Alive) continue;
+      if (s.team[j] === team || s.state[j] !== SState.Alive || !allowed(j)) continue;
       const dx = s.x[j] - s.x[i];
       const dz = s.z[j] - s.z[i];
       let d2 = dx * dx + dz * dz;
@@ -1081,6 +1100,8 @@ export class World {
       er.holdBlockT = t;
     }
     if (this.defending(r)) dmg *= RULES.holdAtk;
+    this.springAmbush(r, er);
+    if (this.ambushed(r)) dmg *= RULES.ambushAtk;
     // 半渡而擊：涉水中或剛上岸、陣形未整的部隊受傷大增、攻擊大減
     if (this.fording(er)) {
       dmg *= 1 + RULES.fordDef;
@@ -1110,7 +1131,24 @@ export class World {
 
   /** 受到傷害總倍率：士氣＋糧況 */
   takenMul(r: Regiment): number {
-    return this.moraleTakenMul(r) * SUPPLY_EFFECTS[this.supplyOf(r)].taken;
+    let m = this.moraleTakenMul(r) * SUPPLY_EFFECTS[this.supplyOf(r)].taken;
+    if (this.t - r.ambushedT < RULES.ambushTime) m *= RULES.ambushTaken;
+    return m;
+  }
+
+  /** 伏擊：從隱藏中殺出（4 秒內還是隱藏狀態）→ 目標中伏 */
+  private springAmbush(att: Regiment, def: Regiment): void {
+    if (this.t - att.concealedT > 4 || this.t - def.ambushedT < 30 || def.team === att.team) return;
+    def.ambushedT = this.t;
+    att.ambushDealT = this.t;
+    def.morale -= RULES.ambushShock * this.teamGrit[def.team];
+    att.morale = Math.min(100, att.morale + 5);
+    this.events.push({ k: 'ambush', reg: def.id, by: att.id });
+  }
+
+  /** 中伏中 */
+  ambushed(r: Regiment): boolean {
+    return this.t - r.ambushedT < RULES.ambushTime;
   }
 
   private chargeImpact(i: number, r: Regiment, speed: number): void {
@@ -1173,6 +1211,7 @@ export class World {
       r.engagedWith.add(er.id);
       er.engagedWith.add(r.id);
       r.lastCombatT = er.lastCombatT = t;
+      this.springAmbush(r, er);
       if (t - er.chargeShockT > 4) {
         er.chargeShockT = t;
         if (!er.hasBuff('steady', t)) er.morale -= RULES.chargeShock * (er.formation === 'square' ? 0.5 : 1) * this.teamGrit[er.team] * (frontMul < 1 ? 0.7 : 1);
@@ -1295,6 +1334,7 @@ export class World {
         // 涉水的敵軍擠成一團、舉不起盾
         if (this.fording(er) && p.team[k] !== s.team[best]) dmg *= RULES.fordArrow;
         // 射剋槍：長槍兵沒有盾、陣形密集
+        if (p.reg[k] >= 0 && this.regs[p.reg[k]]) this.springAmbush(this.regs[p.reg[k]], er);
         if (eu.cls === 'pole' && p.team[k] !== s.team[best]) {
           dmg *= RULES.missileVsPole;
           er.counterHitT = this.t;
@@ -1321,6 +1361,7 @@ export class World {
   damage(j: number, dmg: number, by: number, byReg = -1): void {
     const s = this.s;
     if (s.state[j] !== SState.Alive) return;
+    if (this.presentation && !this.forceDmg) return;
     const reg = this.regs[s.reg[j]];
     // 戰鬥傷害：士氣低落、斷糧時受傷更重
     if (by >= 0 || byReg >= 0) dmg *= this.takenMul(reg);
@@ -1979,10 +2020,12 @@ export class World {
       // 劇本隱藏的伏兵：被發現或開打前一律不顯示
       if (r.hidden && !seen) {
         r.visible = false;
+        r.concealedT = this.t;
         continue;
       }
       if (seen) r.hidden = false;
       r.visible = seen;
+      if (!this.isVisibleTo(r, 1 - r.team)) r.concealedT = this.t;
     }
   }
 
@@ -2209,6 +2252,22 @@ export class World {
         // 施放距離：武將 160 m 內
         if (Math.hypot(fx - gx, fz - gz) > 160) return false;
         this.fireArea(fx, fz, 30, r.team);
+        if (this.flammable(fx, fz)) this.addFire(fx, fz, 24, r.team, 24);
+        break;
+      }
+      case 'firetrap': {
+        const fx = x ?? gx;
+        const fz = z ?? gz;
+        if (Math.hypot(fx - gx, fz - gz) > 200 || this.sc.weather === 'rain') return false;
+        // 火燒博望：大片火場，草木越多燒得越廣
+        this.addFire(fx, fz, 30, r.team, 30);
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + this.rng();
+          const ox = fx + Math.cos(a) * 28;
+          const oz = fz + Math.sin(a) * 28;
+          if (this.flammable(ox, oz)) this.addFire(ox, oz, 20, r.team, 26);
+        }
+        this.fireArea(fx, fz, 30, r.team);
         break;
       }
     }
@@ -2251,6 +2310,8 @@ export class World {
           void p;
         }
         for (const o of this.regs) if (o.team !== team && !o.gone && Math.hypot(o.mx - x, o.mz - z) < def.radius + o.radius * 0.5) o.morale -= 10;
+        // 射進森林、草叢：起火
+        if (this.sc.weather !== 'rain' && this.flammable(x, z)) this.addFire(x, z, 20, team, 22);
         for (const st of this.structs) {
           if (this.sc.weather === 'rain') break;
           if (st.team !== team && !st.burnt && st.kind !== 'water' && Math.hypot(st.x - x, st.z - z) < def.radius + st.radius) {
@@ -2315,6 +2376,87 @@ export class World {
   }
 
   /** 範圍火攻：傷害、士氣、點燃建築 */
+  /** 這裡有草木可燒（森林、草叢） */
+  flammable(x: number, z: number): boolean {
+    return this.nav.forestAt(x, z) > 0.3 || this.nav.forestAt(x + 10, z) > 0.3 || this.nav.forestAt(x - 10, z) > 0.3 || this.nav.forestAt(x, z + 10) > 0.3 || this.nav.forestAt(x, z - 10) > 0.3;
+  }
+
+  /** 開戰時：待在森林裡的部隊進入埋伏（敵軍要走到 50 m 內才看得見） */
+  concealInForests(): number {
+    let n = 0;
+    for (const r of this.regs) {
+      if (r.gone || this.nav.forestAt(r.mx, r.mz) < 0.45) continue;
+      r.hidden = true;
+      r.concealedT = this.t;
+      if (r.team === this.player) n++;
+    }
+    return n;
+  }
+
+  /** 演出模式：讓某軍團倒下 n 名士兵（不含武將），帶死亡動作 */
+  killSoldiers(regId: number, n: number): void {
+    const r = this.regs[regId];
+    if (!r || n <= 0) return;
+    this.forceDmg = true;
+    for (let k = 0; k < n; k++) {
+      const pool = r.members.filter((i) => !this.s.general[i]);
+      if (!pool.length) break;
+      const j = pool[Math.floor(this.rng() * pool.length)];
+      this.damage(j, 1e9, -1);
+    }
+    this.forceDmg = false;
+  }
+
+  /** 新增地面火場（雨天燒不久、不蔓延） */
+  addFire(x: number, z: number, r: number, team: number, dur: number): void {
+    if (this.fires.length >= 48) return;
+    if (this.fires.some((f) => Math.hypot(f.x - x, f.z - z) < 8)) return;
+    this.fires.push({ x, z, r, until: this.t + dur * (this.sc.weather === 'rain' ? 0.4 : 1), team });
+    this.flags.lastFireX = x;
+    this.flags.lastFireZ = z;
+    this.flags.lastFireT = this.t;
+  }
+
+  /** 是否身陷火場 */
+  inFire(x: number, z: number): boolean {
+    return this.fires.some((f) => Math.hypot(f.x - x, f.z - z) < f.r);
+  }
+
+  /** 火場：燒傷其中的士兵（敵我都燒）、士氣大跌；順風沿草木蔓延 */
+  private stepFires(dt: number): void {
+    const s = this.s;
+    const res = this.hash.res;
+    for (let i = this.fires.length - 1; i >= 0; i--) if (this.fires[i].until <= this.t) this.fires.splice(i, 1);
+    const burning = new Set<number>();
+    for (const f of this.fires) {
+      const n = this.hash.near(f.x, f.z, f.r);
+      for (let k = 0; k < n; k++) {
+        const j = res[k];
+        if (s.state[j] !== SState.Alive || Math.hypot(s.x[j] - f.x, s.z[j] - f.z) > f.r) continue;
+        burning.add(s.reg[j]);
+        if (this.rng() < RULES.fireHitChance * dt) this.damage(j, RULES.fireDmg * (0.7 + this.rng() * 0.6) * (s.general[j] ? 0.3 : 1), -1);
+      }
+    }
+    for (const id of burning) {
+      const r = this.regs[id];
+      r.burnT = this.t;
+      r.morale -= RULES.fireMorale * dt * this.teamGrit[r.team];
+    }
+    // 蔓延：只在草木上，順風機率高
+    if (this.sc.weather === 'rain') return;
+    const add: { x: number; z: number; team: number }[] = [];
+    for (const f of this.fires) {
+      if (this.rng() > RULES.fireSpread * dt || f.until - this.t < 4) continue;
+      let a = this.rng() * Math.PI * 2;
+      if (this.sc.wind && this.rng() < 0.7) a = Math.atan2(this.sc.wind.z, this.sc.wind.x) + (this.rng() - 0.5) * 1.2;
+      const d = 14 + this.rng() * 8;
+      const nx = f.x + Math.cos(a) * d;
+      const nz = f.z + Math.sin(a) * d;
+      if (this.nav.forestAt(nx, nz) > 0.35 && this.hf.inPlay(nx, nz, 4)) add.push({ x: nx, z: nz, team: f.team });
+    }
+    for (const a of add) this.addFire(a.x, a.z, 16, a.team, 18);
+  }
+
   fireArea(x: number, z: number, rad: number, team: number): void {
     const s = this.s;
     const n = this.hash.near(x, z, rad);

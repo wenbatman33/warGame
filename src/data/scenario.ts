@@ -108,7 +108,10 @@ export interface Scenario {
   holdTime?: number;
   /** 作戰步驟（右側面板依序引導） */
   plan?: PlanStep[];
-  camera?: { x: number; z: number; dist?: number; yaw?: number };
+  /** 地點地圖玩法（手指滑動指揮）；有這個欄位就用新玩法 */
+  nodes?: import('../node/types').NodeScenario;
+  /** pitch：固定俯角（度），不填＝依距離自動 */
+  camera?: { x: number; z: number; dist?: number; yaw?: number; pitch?: number };
   /** 天色：day／dusk／night */
   time?: 'day' | 'dusk' | 'night';
   /** 天氣：雨（弓弩與火攻減弱、泥濘）、霧（視野縮短、箭矢散布變大） */

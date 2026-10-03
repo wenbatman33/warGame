@@ -1,6 +1,7 @@
 // 戰役清單與戰役地圖節點位置（百分比）
 import type { Scenario } from '../scenario';
 import { BAIMA } from './baima';
+import { BOWANG } from './bowang';
 import { CHANGBAN } from './changban';
 import { CHIBI } from './chibi';
 import { DINGJUN } from './dingjun';
@@ -25,6 +26,7 @@ export const CAMPAIGN: CampaignEntry[] = [
   { id: 'baima', name: '白馬之圍（教學）', year: '200', x: 60, y: 21, scenario: BAIMA, image: 'battle/battle_baima.jpg' },
   { id: 'hulao', name: '虎牢關之戰', year: '190', x: 40, y: 27, scenario: HULAO, image: 'battle/battle_hulao.jpg' },
   { id: 'guandu', name: '官渡之戰', year: '200', x: 50, y: 33, scenario: GUANDU, image: 'battle/battle_guandu.jpg' },
+  { id: 'bowang', name: '博望坡之戰（新玩法）', year: '202', x: 53, y: 44, scenario: BOWANG, image: 'battle/battle_bowang.jpg' },
   { id: 'changban', name: '長坂坡之戰', year: '208', x: 44, y: 53, scenario: CHANGBAN, image: 'battle/battle_changban.jpg' },
   { id: 'chibi', name: '赤壁之戰', year: '208', x: 61, y: 63, scenario: CHIBI, image: 'battle/battle_chibi.jpg' },
   { id: 'hefei', name: '合肥之戰', year: '215', x: 78, y: 41, scenario: HEFEI, image: 'battle/battle_hefei.jpg' },

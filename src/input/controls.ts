@@ -32,6 +32,8 @@ export class Controls {
   groups: number[][] = Array.from({ length: 10 }, () => []);
   /** 觸控模式：點地面＝移動 */
   multiSelect = false;
+  /** 鎖定：不直接對 3D 軍團下令（地點地圖玩法由滑動手勢下令） */
+  locked = false;
   private keys = new Set<string>();
   private el: HTMLElement;
   private box: HTMLDivElement;
@@ -197,6 +199,7 @@ export class Controls {
 
   /** 右鍵點擊：攻擊／移動（多選時保持相對位置並旋轉） */
   orderAt(x: number, z: number, run: boolean): void {
+    if (this.locked) return;
     const ids = this.mine();
     if (!ids.length) return;
     const w = this.world;
@@ -303,6 +306,7 @@ export class Controls {
   }
 
   commitLine(plan: PlanPreview[], run: boolean): void {
+    if (this.locked) return;
     if (this.hooks.deployMode?.()) {
       for (const p of plan) this.hooks.onDeployPlace?.(p.reg.id, p.x, p.z, p.facing, p.width);
       this.hooks.onOrder?.('line', plan.map((p) => p.reg.id));
@@ -570,6 +574,8 @@ export class Controls {
         this.groups[n] = [...this.selected];
       } else if (this.groups[n].length) this.select(this.groups[n].filter((id) => !w.regs[id].gone));
       else if (n >= 1 && n <= 3 && !this.groups[n].length) this.hooks.onSpeed?.([0.5, 1, 2][n - 1]);
+    } else if (this.locked && ['h', 'r', 'g', 'f', 't', 'backspace'].includes(k)) {
+      // 地點地圖玩法：這些逐團指令不用
     } else if (k === 'h') {
       w.commandHalt(ids);
       this.hooks.onOrder?.('halt', ids);

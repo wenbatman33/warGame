@@ -367,6 +367,7 @@ export class BattleView {
       }
       if (!paused && (st.fire > 0 || st.burnt)) this.fireFx(sv, dt);
     }
+    if (!paused) this.groundFireFx();
     if (!paused) this.particles.update(dt);
     this.supplyLines.update(paused ? 0 : dt);
     if (this.rain) {
@@ -385,6 +386,25 @@ export class BattleView {
   }
 
   private fireAcc = 0;
+  /** 地面火場（火攻）：火焰、濃煙、火星 */
+  private groundFireFx(): void {
+    const w = this.world;
+    for (const f of w.fires) {
+      const life = Math.min(1, (f.until - w.t) / 4);
+      const n = Math.max(1, Math.round((f.r / 8) * life));
+      for (let k = 0; k < n; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = Math.sqrt(Math.random()) * f.r;
+        const x = f.x + Math.cos(a) * rr;
+        const z = f.z + Math.sin(a) * rr;
+        const y = w.groundY(x, z);
+        if (Math.random() < 0.7) this.particles.emit('fire', x, y + 0.4, z, 1, 1.6, 1.1 + Math.random() * 0.8);
+        if (Math.random() < 0.18) this.particles.emit('smoke', x, y + 3, z, 1, 3, 1.6);
+        if (Math.random() < 0.08) this.particles.emit('ember', x, y + 1, z, 2, 2);
+      }
+    }
+  }
+
   private fireFx(sv: StructView, dt: number): void {
     const st = sv.st;
     this.fireAcc += dt;

@@ -39,7 +39,8 @@ export type GeneralId =
   | 'huaxiong'
   | 'huangzhong'
   | 'xiahouyuan'
-  | 'fazheng';
+  | 'fazheng'
+  | 'zhugeliang';
 
 export type AbilityId =
   | 'rally' // 號令：範圍士氣大增
@@ -54,7 +55,8 @@ export type AbilityId =
   | 'fortify' // 防禦大增
   | 'raid' // 縱火加速＋移動加速
   | 'fury' // 攻擊加成
-  | 'firestorm'; // 指定地點火攻
+  | 'firestorm' // 指定地點火攻
+  | 'firetrap'; // 火計：指定地點放火，火場持續燃燒、沿草木蔓延
 
 export interface AbilityDef {
   id: AbilityId;
@@ -79,6 +81,7 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   raid: { id: 'raid', name: '百騎劫營', cd: 70, desc: '20 秒內親衛縱火速度 ×3、速度 +40%' },
   fury: { id: 'fury', name: '奮戰', cd: 60, desc: '20 秒內親衛攻擊 +40%' },
   firestorm: { id: 'firestorm', name: '火燒連營', cd: 90, desc: '指定地點起火，火勢沿森林與營寨蔓延', targeted: true },
+  firetrap: { id: 'firetrap', name: '火燒博望', cd: 100, desc: '指定地點（200 m 內）放火：火場持續燃燒、順風沿草木蔓延，敵軍在火中每秒受傷、士氣大跌', targeted: true },
 };
 
 export interface GeneralDef {
@@ -104,6 +107,7 @@ export const GENERALS: Record<GeneralId, GeneralDef> = {
   yuanshao: { id: 'yuanshao', name: '袁紹', faction: 'yuan', war: 70, lead: 85, int: 70, model: 'gen_sword', ability: 'rally', title: '四世三公' },
   chunyuqiong: { id: 'chunyuqiong', name: '淳于瓊', faction: 'yuan', war: 70, lead: 60, int: 50, model: 'gen_glaive', ability: null, title: '烏巢守將' },
   gaolan: { id: 'gaolan', name: '高覽', faction: 'yuan', war: 82, lead: 70, int: 55, model: 'gen_spear', ability: 'fury', title: '河北名將' },
+  zhugeliang: { id: 'zhugeliang', name: '諸葛亮', faction: 'shu', war: 38, lead: 92, int: 100, model: 'gen_fan', ability: 'firetrap', title: '臥龍' },
   liubei: { id: 'liubei', name: '劉備', faction: 'shu', war: 73, lead: 80, int: 75, model: 'gen_sword', ability: 'rally', title: '昭烈帝' },
   guanyu: { id: 'guanyu', name: '關羽', faction: 'shu', war: 97, lead: 92, int: 75, model: 'gen_glaive', ability: 'cleave', title: '武聖' },
   zhangfei: { id: 'zhangfei', name: '張飛', faction: 'shu', war: 98, lead: 60, int: 30, model: 'gen_spear', ability: 'roar', title: '燕人張翼德' },

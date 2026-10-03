@@ -2,8 +2,11 @@
 import { audio } from '../audio/audio';
 import { AiCommander } from '../ai/commander';
 import { PlayerTactics } from './tactics';
+import { NodeGame } from '../node/game';
+import { NodeHud } from '../ui/nodeHud';
+import { NodeMapRenderer } from '../render/nodeMap';
 import type { Scenario } from '../data/scenario';
-import { RtsCamera } from '../input/camera';
+import { CAM, RtsCamera } from '../input/camera';
 import { Controls } from '../input/controls';
 import { generateHeightfield } from '../map/mapgen';
 import { BattleView } from '../render/battleView';
@@ -38,6 +41,10 @@ export class Battle {
   readonly ai: AiCommander[] = [];
   /** 玩家的戰線指令（整組戰術） */
   tactics!: PlayerTactics;
+  /** 地點地圖玩法（手指滑動指揮）：規則核心、地圖、操作介面 */
+  node: NodeGame | null = null;
+  nodeHud: NodeHud | null = null;
+  nodeMap: NodeMapRenderer | null = null;
   paused = false;
   speed = 1;
   phase: 'deploy' | 'battle' | 'end' = 'deploy';
@@ -75,7 +82,18 @@ export class Battle {
     this.cam = new RtsCamera(this.view.stage.camera, hf);
     const c = sc.camera ?? { x: 0, z: 150 };
     this.cam.set(c.x, c.z, c.dist ?? 230, c.yaw ?? 0);
-    if (!opts.skipDeploy) {
+    this.cam.pitchOverride = c.pitch ?? null;
+    if (sc.nodes) {
+      // 地點地圖：依螢幕長寬比自動拉遠，讓整條戰線（所有地點）橫向放得下
+      const yaw = c.yaw ?? 0;
+      const across = sc.nodes.nodes.map((n) => n.x * Math.cos(yaw) - n.z * Math.sin(yaw));
+      const span = Math.max(...across) - Math.min(...across) + 90;
+      const aspect = container.clientWidth / Math.max(1, container.clientHeight);
+      const halfH = Math.tan(((CAM.fov / 2) * Math.PI) / 180) * aspect;
+      const fit = Math.min(CAM.maxDist, Math.max(c.dist ?? 380, span / (2 * halfH)));
+      this.cam.set(c.x, c.z, fit, yaw);
+    }
+    if (!opts.skipDeploy && !sc.nodes) {
       // 開場鏡頭：先看敵軍陣地，再拉回我軍
       const en = this.world.regs.filter((r) => r.team !== this.world.player && !r.hidden);
       if (en.length) {
@@ -113,11 +131,29 @@ export class Battle {
       onKey: (k, e) => this.hud.onKey(k, e),
     });
     this.tactics = new PlayerTactics(this.world, this.world.player);
-    this.hud = new Hud(container, this);
-    for (let t = 0; t < sc.teams.length; t++) {
-      if (t !== this.world.player && sc.teams[t].ai) this.ai.push(new AiCommander(this.world, t, sc.teams[t].ai!, opts.difficulty));
+    if (sc.nodes) {
+      // 地點地圖玩法：3D 戰場只負責演出，勝負由規則核心決定
+      this.world.presentation = true;
+      this.world.speedMul = 1.6;
+      this.node = new NodeGame(this.world, sc.nodes);
+      this.world.ext.nodeGame = this.node;
+      this.controls.locked = true;
+      this.nodeMap = new NodeMapRenderer(this.world, this.node);
+      this.view.stage.scene.add(this.nodeMap.group);
     }
-    if (opts.skipDeploy) this.startBattle();
+    this.hud = new Hud(container, this);
+    if (this.node && this.nodeMap) {
+      this.hud.setNodeMode(this.node);
+      this.nodeHud = new NodeHud(this, this.node, this.nodeMap);
+    }
+    for (let t = 0; t < sc.teams.length; t++) {
+      if (!this.node && t !== this.world.player && sc.teams[t].ai) this.ai.push(new AiCommander(this.world, t, sc.teams[t].ai!, opts.difficulty));
+    }
+    if (this.node) {
+      // 直接進入戰鬥、先暫停：玩家可以先滑動下令，按「▶ 開戰」才開始
+      this.startBattle();
+      this.paused = true;
+    } else if (opts.skipDeploy) this.startBattle();
     else audio.music('deploy');
     this.view.stage.renderer.setAnimationLoop(() => this.frame());
   }
@@ -186,6 +222,8 @@ export class Battle {
     this.phase = 'battle';
     this.world.started = true;
     this.world.flags.startT = this.world.t;
+    // 森林裡的部隊進入埋伏（地點地圖玩法由規則核心處理）
+    if (!this.node) this.world.flags.ambushers = this.world.concealInForests();
     this.sc.onStart?.(this.world);
     this.tactics.assignGroups();
     this.hud.refreshGroups();
@@ -240,8 +278,10 @@ export class Battle {
     this.view.stage.updateShadow(this.cam.target, this.cam.viewRadius);
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[this.world.player].deploy : null);
     this.view.render(1, 0.016, false);
+    this.nodeMap?.update(0.016);
     this.view.stage.render();
     this.hud.update(0.25);
+    this.nodeHud?.update();
   }
 
   /** 測試用：同步快轉模擬 n 秒（分頁在背景時 rAF 不跑） */
@@ -253,6 +293,7 @@ export class Battle {
       if (this.phase === 'battle') {
         for (const ai of this.ai) ai.update();
         this.tactics.update();
+        this.node?.update(TICK);
       }
       this.handleEvents(w.events);
       this.view.consumeEvents(w.events);
@@ -281,6 +322,7 @@ export class Battle {
       if (this.phase === 'battle') {
         for (const ai of this.ai) ai.update();
         this.tactics.update();
+        this.node?.update(TICK);
       }
       this.acc -= TICK;
       steps++;
@@ -311,8 +353,10 @@ export class Battle {
     const alpha = this.acc / TICK;
     this.view.overlays.update(this.controls.selected, this.controls.hover, this.controls.preview, this.phase === 'deploy' ? this.sc.teams[w.player].deploy : null);
     this.view.render(alpha, this.paused ? 0 : raw * this.speed, this.paused);
+    this.nodeMap?.update(raw);
     this.view.stage.render();
     this.hud.update(raw);
+    this.nodeHud?.update();
     this.autoQuality(raw);
     audio.setListener(this.cam.target.x, this.cam.target.z, this.cam.dist);
     this.ambience();
@@ -389,6 +433,7 @@ export class Battle {
     this.running = false;
     this.view.stage.renderer.setAnimationLoop(null);
     this.controls.dispose();
+    this.nodeHud?.dispose();
     this.hud.dispose();
     this.view.stage.renderer.domElement.remove();
     // 釋放 GPU 記憶體與事件監聽（連打多場不累積）

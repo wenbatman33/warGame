@@ -17,6 +17,7 @@ export const STANCES: Record<Exclude<Stance, 'free'>, { name: string; icon: stri
   advance: { name: '推進', icon: '⚔', desc: '整組保持隊形向敵軍推進，接近就自動接戰；弓兵跟在步兵後方射擊' },
   retreat: { name: '後撤', icon: '↩', desc: '面向敵軍有序後退 60 m，到位後改為固守' },
   flank: { name: '包抄', icon: '🐎', desc: '繞到最近敵軍（優先已被我軍纏住的）的側面與背後再進攻：側面 ×1.4、背後 ×2' },
+  lure: { name: '誘敵', icon: '🎣', desc: '上前挑釁最近的敵軍，被追就退回現在的位置——把敵人引進你的伏兵或火場' },
 };
 
 export class PlayerTactics {
@@ -92,7 +93,11 @@ export class PlayerTactics {
       r.stance = st;
       r.stanceX = r.mx;
       r.stanceZ = r.mz;
-      if (st === 'retreat') {
+      if (st === 'lure') {
+        r.lureStage = 'go';
+        r.lureT = w.t;
+        r.hold = false;
+      } else if (st === 'retreat') {
         const [dx, dz] = this.enemyDir(r, enemies);
         r.stanceX = r.mx - dx * 60;
         r.stanceZ = r.mz - dz * 60;
@@ -133,6 +138,9 @@ export class PlayerTactics {
           break;
         case 'flank':
           this.flank(r, enemies);
+          break;
+        case 'lure':
+          this.lure(r, enemies);
           break;
       }
     }
@@ -261,6 +269,43 @@ export class PlayerTactics {
     const tx = r.mx + dx * step;
     const tz = r.mz + dz * step;
     if (r.order.type !== 'move' || Math.hypot(r.order.x - tx, r.order.z - tz) > 15) w.commandMove([r.id], tx, tz, Math.atan2(dx, dz));
+  }
+
+  /** 誘敵：上前挑釁 → 被追就跑回陷阱點（下令時的位置）→ 到了改固守 */
+  private lure(r: Regiment, enemies: Regiment[]): void {
+    const w = this.w;
+    const home = { mx: r.stanceX, mz: r.stanceZ };
+    const near = this.nearest(r, enemies, 300);
+    if (!near) return;
+    const d = Math.hypot(near.mx - r.mx, near.mz - r.mz) - near.radius;
+    if (r.lureStage === 'go') {
+      // 靠近到 35 m（弓兵射程內就放箭）或已經接觸 → 掉頭跑
+      if (d < 40 || r.engagedWith.size > 0 || (r.ranged && d < r.unit.ranged!.range * 0.8 && w.t - r.lureT > 6)) {
+        r.lureStage = 'back';
+        r.lureT = w.t;
+        w.commandMove([r.id], home.mx, home.mz, Math.atan2(near.mx - home.mx, near.mz - home.mz), undefined, true);
+        return;
+      }
+      if (r.order.type !== 'move' || Math.hypot(r.order.x - near.mx, r.order.z - near.mz) > 20) {
+        const a = Math.atan2(near.mx - r.mx, near.mz - r.mz);
+        w.commandMove([r.id], near.mx - Math.sin(a) * 30, near.mz - Math.cos(a) * 30, a);
+      }
+      return;
+    }
+    // 退回中：到了陷阱點就固守；敵人沒追來就再去挑釁
+    const atHome = Math.hypot(r.mx - home.mx, r.mz - home.mz) < 15;
+    if (atHome) {
+      const chased = enemies.some((e) => Math.hypot(e.mx - r.mx, e.mz - r.mz) < 90);
+      if (chased) {
+        r.stance = 'hold';
+        r.hold = !r.ranged && !r.unit.mounted;
+        return;
+      }
+      if (w.t - r.lureT > 12) {
+        r.lureStage = 'go';
+        r.lureT = w.t;
+      }
+    } else if (r.order.type !== 'move') w.commandMove([r.id], home.mx, home.mz, r.facing, undefined, true);
   }
 
   /** 包抄：繞到目標的側後方再進攻 */

@@ -81,6 +81,18 @@ export class Hud {
   private planDragT = 0;
   private groupChips = new Map<GroupId, HTMLElement>();
   private cardFade: () => void = () => {};
+  /** 地點地圖玩法：兵力顯示以規則核心為準 */
+  private nodeGame: import('../node/game').NodeGame | null = null;
+
+  setNodeMode(g: import('../node/game').NodeGame): void {
+    this.nodeGame = g;
+    this.root.classList.add('nodemode');
+  }
+
+  private troopsOf(r: Regiment): number {
+    const u = this.nodeGame?.unitOfReg(r.id);
+    return u ? Math.round(u.troops / 10) * 10 : r.alive * MEN_PER_SOLDIER;
+  }
 
   constructor(
     container: HTMLElement,
@@ -357,6 +369,23 @@ export class Hud {
     const w = this.b.world;
     const now = w.t;
     if (r.routing) return null;
+    // 地點地圖玩法：狀態由規則核心決定
+    const nu = this.nodeGame?.unitOfReg(r.id);
+    if (nu) {
+      const g = this.nodeGame!;
+      if (nu.mode === 'retreat') return { t: '敗退' };
+      if (nu.ambushedUntil > now) return { t: '中伏' };
+      if (nu.burnT > now - 1.5) return { t: '🔥火中' };
+      if (nu.dazedUntil > now) return { t: '😵中計慌亂' };
+      if (nu.cut) return { t: '斷糧' };
+      if (nu.ambushUntil > now) return { t: '伏擊！', good: true };
+      if (nu.hidden && (nu.team === w.player || g.visibleTo(nu, w.player))) return { t: '🌲埋伏中', good: true };
+      if (nu.mode === 'chase') return { t: '追擊中' };
+      return null;
+    }
+    if (w.ambushed(r)) return { t: `中伏 受傷+${Math.round((RULES.ambushTaken - 1) * 100)}%` };
+    if (now - r.ambushDealT < 4) return { t: '伏擊！', good: true };
+    if (now - r.burnT < 1.5) return { t: '火中！' };
     if (r.rearHits > 0) return { t: `背襲 ×${RULES.rearMul}` };
     if (r.flankHits > 0) return { t: `側擊 ×${RULES.flankMul}` };
     if (now - r.counterHitT < 2.5) return { t: `被剋 ×${+r.counterHitMul.toFixed(2)}` };
@@ -373,6 +402,7 @@ export class Hud {
     if (r.morale < RULES.brokenThreshold) return { t: '瓦解 受傷+20%' };
     if (r.stamina < 25 && !r.unit.mounted) return { t: '疲憊' };
     if (r.ranged && r.members.length && r.members.every((i) => w.s.ammo[i] <= 0)) return { t: '箭盡' };
+    if (r.team === w.player && r.hidden && w.started) return { t: '🌲埋伏中', good: true };
     return null;
   }
 
@@ -506,7 +536,7 @@ export class Hud {
         this.addCard(r);
         c = this.cards.get(r.id)!;
       }
-      (c.querySelector('.num') as HTMLElement).textContent = fmt(r.alive * MEN_PER_SOLDIER);
+      (c.querySelector('.num') as HTMLElement).textContent = fmt(this.troopsOf(r));
       const mi = c.querySelector('.mb i') as HTMLElement;
       mi.style.width = `${r.gone ? 0 : r.morale}%`;
       mi.style.background = this.moraleColor(r.morale);
@@ -587,7 +617,7 @@ export class Hud {
       let b = this.badges.get(r.id);
       if (!b) {
         const e = el('div', 'badge');
-        e.innerHTML = `<div class="ic">${this.iconOf(r)}</div><div class="bd">${r.general ? `<span class="gname stroke">${r.general.name}</span>` : ''}<span class="num"></span><span class="mb"><i></i></span></div><span class="st"></span><span class="warn stroke"></span>`;
+        e.innerHTML = `<div class="ic">${this.iconOf(r)}</div><div class="bd">${r.general ? `<span class="gname stroke">${r.general.name}</span>` : this.nodeGame ? `<span class="gname stroke">${r.name}</span>` : ''}<span class="num"></span><span class="mb"><i></i></span></div><span class="st"></span><span class="warn stroke"></span>`;
         e.onpointerdown = (ev) => {
           ev.stopPropagation();
           audio.unlock();
@@ -619,7 +649,7 @@ export class Hud {
       b.el.className = `badge${enemy ? ' enemy' : ''}${r.general ? ' gen' : ''}${ctl.selected.has(r.id) ? ' sel' : ''}${r.routing ? ' rout' : ''}${ctr ? ` ctr-${ctr}` : ''}`;
       b.el.style.transform = `translate(${(p.x - 14).toFixed(1)}px, ${(p.y - 14).toFixed(1)}px)`;
       b.el.style.display = '';
-      b.num.textContent = fmt(r.alive * MEN_PER_SOLDIER);
+      b.num.textContent = fmt(this.troopsOf(r));
       b.mb.style.width = `${r.morale}%`;
       b.mb.style.background = this.moraleColor(r.morale);
       b.st.textContent = this.stateIcons(r);
@@ -752,7 +782,7 @@ export class Hud {
     };
     // 戰線指令：整組戰術（開戰前也可以先設定）
     const battle = this.b.phase === 'battle';
-    const stances: Exclude<Stance, 'free'>[] = battle ? ['hold', 'advance', 'retreat', 'flank'] : ['hold', 'advance', 'flank'];
+    const stances: Exclude<Stance, 'free'>[] = battle ? ['hold', 'advance', 'retreat', 'flank', 'lure'] : ['hold', 'advance', 'flank'];
     for (const st of stances) {
       const d = STANCES[st];
       btn(`${d.icon} ${d.name}`, `戰線指令・${d.name}：${d.desc}（手動下令會取消）`, all((r) => r.stance === st), () => {
@@ -1001,6 +1031,14 @@ export class Hud {
       case 'lineRestored': {
         const t = w.teams[ev.team];
         this.toast(mine(ev.team) ? '🍚 糧道恢復暢通，本陣重新進糧' : `${t.name}糧道恢復了`, mine(ev.team) ? 'good' : 'bad');
+        break;
+      }
+      case 'ambush': {
+        const r = w.regs[ev.reg];
+        const by = w.regs[ev.by];
+        this.toast(mine(by.team) ? `伏兵殺出！敵軍「${r.name}」中伏` : `我軍「${r.name}」中伏！`, mine(by.team) ? 'gold' : 'bad', true, at(r.mx, r.mz));
+        audio.play('war_cry', this.b.sndPos(r.mx, r.mz));
+        audio.play('horn_charge', this.b.sndPos(by.mx, by.mz));
         break;
       }
       case 'generalRetreat': {
