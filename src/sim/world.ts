@@ -1,7 +1,7 @@
 // 戰場模擬總管：固定 30 Hz；士兵移動、陣型、近戰、箭矢、士氣、糧草、視野、勝負
 import { FACTIONS } from '../data/factions';
 import { ABILITIES, GENERALS } from '../data/generals';
-import { RULES, SUPPLY_EFFECTS, WEATHER, type SupplyState } from '../data/rules';
+import { RULES, SUPPLY_EFFECTS, SUPPLY_RANK, WEATHER, type SupplyState } from '../data/rules';
 import { STRATAGEMS, type StratagemId } from '../data/stratagems';
 import type { RegimentSpec, Scenario } from '../data/scenario';
 import { UNITS, type UnitDef } from '../data/units';
@@ -28,6 +28,9 @@ export type GameEvent =
   | { k: 'rally'; reg: number }
   | { k: 'shattered'; reg: number }
   | { k: 'generalDown'; reg: number; name: string }
+  | { k: 'generalRetreat'; reg: number; name: string }
+  | { k: 'lineCut'; team: number; x: number; z: number; burnt: boolean }
+  | { k: 'lineRestored'; team: number }
   | { k: 'ignite'; s: number }
   | { k: 'burnt'; s: number }
   | { k: 'wagonLost'; team: number }
@@ -58,6 +61,10 @@ export interface TeamState {
   wagonsLost: number;
   /** 軍心大亂（主糧倉被焚）持續到此時間 */
   panicUntil: number;
+  /** 糧道是否暢通（至少一條補給路線沒被切斷） */
+  lineOk: boolean;
+  /** 被逼退或陣亡的敵將數（戰報用） */
+  generalsBeaten: number;
 }
 
 const _slot: [number, number] = [0, 0];
@@ -96,8 +103,6 @@ export class World {
   teamAtk = [1, 1];
   /** 各隊士氣流失倍率（玩家在簡單／普通難度較堅韌） */
   teamGrit = [1, 1];
-  /** 各隊潰兵重整等待倍率 */
-  teamRally = [1, 1];
   /** 各隊「後方」方向（單位向量，由戰場中心指向己方本陣） */
   homeDir: [number, number][] = [];
 
@@ -106,9 +111,8 @@ export class World {
     const atk = d === 'easy' ? 0.75 : d === 'hard' ? 1.12 : 0.92;
     const mor = d === 'easy' ? -12 : d === 'hard' ? 6 : -3;
     for (let t = 0; t < this.teams.length; t++) if (t !== this.player) this.teamAtk[t] = atk;
-    // 玩家是主帥：簡單／普通難度下我軍士氣較不易崩、潰兵較快重整
+    // 玩家是主帥：簡單／普通難度下我軍士氣流失較慢
     this.teamGrit[this.player] = d === 'easy' ? 0.6 : d === 'hard' ? 1 : 0.75;
-    this.teamRally[this.player] = d === 'easy' ? 0.5 : d === 'hard' ? 1 : 0.65;
     for (const r of this.regs) {
       if (r.team === this.player) continue;
       r.baseMorale = Math.max(30, Math.min(95, r.baseMorale + mor));
@@ -145,6 +149,8 @@ export class World {
         depotsBurnt: 0,
         wagonsLost: 0,
         panicUntil: -1,
+        lineOk: true,
+        generalsBeaten: 0,
       };
       this.teams.push(team);
       if (ts.hq) {
@@ -172,6 +178,13 @@ export class World {
       this.nav.blockRing(st.x, st.z, palR, st.gate, gap);
     }
     for (const team of this.teams) team.initialStrength = this.regs.filter((r) => r.team === team.index).reduce((a, r) => a + r.alive, 0);
+    // 糧道：每個補給點沿道路到本陣的路線
+    for (const st of this.structs) {
+      const hq = this.teams[st.team].hq;
+      if (!hq || st === hq) continue;
+      const raw = [[st.x, st.z] as [number, number], ...this.nav.findPath(st.x, st.z, hq.x, hq.z), [hq.x, hq.z] as [number, number]];
+      st.route = densify(raw, 6);
+    }
     // 後方方向：己方本陣（沒有就用初始兵力重心）相對雙方重心的中點
     const centroid = (t: number): [number, number] => {
       const hq = this.teams[t].hq;
@@ -297,7 +310,7 @@ export class World {
       s.x[i] = s.px[i] = r.cx + Math.sin(r.facing) * (r.depth(n) / 2 + 1.5);
       s.z[i] = s.pz[i] = r.cz + Math.cos(r.facing) * (r.depth(n) / 2 + 1.5);
       s.yaw[i] = s.pyaw[i] = r.facing;
-      const hp = 900 + gdef.war * 8;
+      const hp = 1400 + gdef.war * 12;
       s.hp[i] = s.maxHp[i] = hp;
       s.reg[i] = r.id;
       s.slot[i] = -1;
@@ -492,7 +505,7 @@ export class World {
   speedOf(r: Regiment, run: boolean): number {
     const u = r.unit;
     let sp = run ? (r.stamina > 10 ? u.run : u.walk + (u.run - u.walk) * 0.5) : u.walk;
-    sp *= SUPPLY_EFFECTS[this.teams[r.team].supply].speed;
+    sp *= SUPPLY_EFFECTS[this.supplyOf(r)].speed;
     if (r.stamina < 30) sp *= 0.8;
     if (r.formation === 'square') sp *= 0.85;
     sp *= r.buffMul('speed', this.t) * this.wx.speed;
@@ -764,7 +777,16 @@ export class World {
 
       if (r.routing) {
         // 潰逃：沿逃跑路線（各自散開一點），走完就往地圖外跑
-        if (r.pathI < r.path.length) {
+        if (r.retreatHome) {
+          // 撤退的武將：單騎沿路線回本陣，到了就離場
+          while (r.pathI < r.path.length && Math.hypot(r.path[r.pathI][0] - s.x[i], r.path[r.pathI][1] - s.z[i]) < 5) r.pathI++;
+          if (r.pathI >= r.path.length) {
+            this.soldierGone(i);
+            continue;
+          }
+          tx = r.path[r.pathI][0];
+          tz = r.path[r.pathI][1];
+        } else if (r.pathI < r.path.length) {
           const [wx, wz] = r.path[r.pathI];
           tx = wx + (s.tint[i] - 0.5) * 16;
           tz = wz + (((s.tint[i] * 7.7) % 1) - 0.5) * 16;
@@ -827,7 +849,8 @@ export class World {
           if (d > reach * 0.9) {
             tx = ex;
             tz = ez;
-            maxSp = u.mounted && r.run ? this.speedOf(r, true) : u.run * 0.8;
+            // 騎兵：遠處全速衝，貼近後減速纏鬥（不會一直繞圈、讓步兵砍不到）
+            maxSp = u.mounted && r.run && d > 6 ? this.speedOf(r, true) : u.mounted ? u.walk * 1.2 : u.run * 0.8;
           } else {
             tx = s.x[i];
             tz = s.z[i];
@@ -849,7 +872,7 @@ export class World {
       let dvz = 0;
       if (d > 0.15) {
         // 騎兵衝鋒中朝敵人全速撞上去（不做到達減速）
-        const charging = u.mounted && r.run && r.order.type === 'attack' && s.target[i] >= 0;
+        const charging = u.mounted && r.run && r.order.type === 'attack' && s.target[i] >= 0 && d > 6;
         const sp = charging ? maxSp : Math.min(maxSp, d * (u.mounted ? 1.2 : 2.5));
         dvx = (dx / d) * sp;
         dvz = (dz / d) * sp;
@@ -897,7 +920,7 @@ export class World {
     const s = this.s;
     const t = this.t;
     const u = r.unit;
-    const slow = this.teams[r.team].supply === 'starving' ? 0.85 : 1;
+    const slow = this.supplyOf(r) === 'starving' ? 0.85 : 1;
     if (r.routing) return s.setAnim(i, 'flee', t, 1);
     if (s.fighting[i]) return; // 攻擊動作在出手時設定
     if (s.anim[i] === 4 && t - s.animStart[i] < ANIMS.shoot.dur / Math.max(0.1, s.animSpeed[i])) return; // 射擊中
@@ -977,7 +1000,8 @@ export class World {
     const flankHit = !rearHit && Math.abs(lx) > halfW + 0.5 && lz < halfD * 0.4 && !er.unit.mounted;
     const rel = rearHit ? 3 : flankHit ? 1.5 : 0;
     const side = er.formation === 'square' ? 0.5 : 1;
-    let dirMul = 1;
+    // 方向防禦：正面有盾牌與兵器擋著（各兵種 front），側面 ×1.4、背後 ×2
+    let dirMul = eu.front;
     if (rearHit) {
       dirMul = 1 + (RULES.rearMul - 1) * side;
       er.rearHits++;
@@ -985,13 +1009,13 @@ export class World {
       dirMul = 1 + (RULES.flankMul - 1) * side;
       er.flankHits++;
     }
-    const atk = (s.general[i] ? 10 + (GENERALS[r.general!.id].war - 50) * 0.5 : u.atk) * r.buffMul('atk', t);
-    const def = (s.general[j] ? 14 + (GENERALS[er.general!.id].war - 50) * 0.3 : eu.def) * er.buffMul('def', t) * (er.formation === 'loose' ? 0.8 : 1);
+    // 武將本人（撤退中的武將已離開原軍團，用一般數值）
+    const atk = (s.general[i] && r.general ? 10 + (GENERALS[r.general.id].war - 50) * 0.5 : u.atk) * r.buffMul('atk', t);
+    const def = (s.general[j] && er.general ? 14 + (GENERALS[er.general.id].war - 50) * 0.3 : eu.def) * er.buffMul('def', t) * (er.formation === 'loose' ? 0.8 : 1);
     let hit = RULES.hitBase + (atk - def) * RULES.hitPerPoint;
     // 森林：步兵防守有樹木掩護
     if (er.terrain.forest && !eu.mounted) hit -= RULES.forestDef;
     if (s.stun[j] > 0) hit += 0.3;
-    if (er.routing) hit += 0.25;
     if (rel > 2.2) hit += 0.15;
     hit = Math.max(0.1, Math.min(0.92, hit));
     if (this.rng() > hit) {
@@ -999,12 +1023,11 @@ export class World {
       return;
     }
     let dmg = atk * RULES.meleeDmg * (0.8 + this.rng() * 0.4) * dirMul;
-    if (eu.mounted) dmg *= u.vsCav;
-    dmg *= this.moraleAtkMul(r) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk / SUPPLY_EFFECTS[this.teams[er.team].supply].def;
+    dmg *= counterMul(u, eu);
+    dmg *= this.moraleAtkMul(r) * SUPPLY_EFFECTS[this.supplyOf(r)].atk;
     if (this.teams[r.team].panicUntil > t) dmg *= RULES.panicAtk;
     dmg *= this.teamAtk[r.team];
     if (r.stamina < 30) dmg *= 0.85;
-    if (er.routing && u.mounted) dmg *= RULES.pursuitMul;
     // 地形：高低差、涉水（半渡而擊）、森林中的騎兵、己方營寨
     dmg *= this.heightMul(this.hf.height(s.x[i], s.z[i]), this.hf.height(s.x[j], s.z[j]));
     if (this.isWet(s.x[j], s.z[j])) dmg *= 1 + RULES.fordDef;
@@ -1015,10 +1038,24 @@ export class World {
     this.damage(j, dmg, i);
   }
 
+  /** 士氣 → 攻擊倍率（士氣不會讓部隊潰逃，只影響戰力） */
   moraleAtkMul(r: Regiment): number {
     if (r.morale >= RULES.highThreshold) return 1.1;
-    if (r.morale < RULES.waverThreshold) return 0.85;
+    if (r.morale < RULES.brokenThreshold) return 0.9;
+    if (r.morale < RULES.lowThreshold) return 0.95;
     return 1;
+  }
+
+  /** 士氣 → 受到傷害倍率 */
+  moraleTakenMul(r: Regiment): number {
+    if (r.morale < RULES.brokenThreshold) return 1.2;
+    if (r.morale < RULES.lowThreshold) return 1.1;
+    return 1;
+  }
+
+  /** 受到傷害總倍率：士氣＋糧況 */
+  takenMul(r: Regiment): number {
+    return this.moraleTakenMul(r) * SUPPLY_EFFECTS[this.supplyOf(r)].taken;
   }
 
   private chargeImpact(i: number, r: Regiment, speed: number): void {
@@ -1037,10 +1074,10 @@ export class World {
       const d = Math.hypot(dx, dz);
       if (d > 2.2 || (dx * fx + dz * fz) / (d || 1) < 0.3) continue;
       const er = this.regs[s.reg[j]];
-      s.chargeCd[i] = 1.6;
+      s.chargeCd[i] = RULES.chargeRecharge;
       // 拒馬：堅守的長槍兵正面
       const front = Math.abs(angDiff(s.yaw[j], Math.atan2(-dx, -dz))) < 1.1;
-      if (er.type === 'spear' && er.hold && front && !er.routing) {
+      if (er.type === 'spear' && er.hold && front) {
         this.damage(i, r.unit.charge * RULES.braceReflect * (speed / r.unit.run), j);
         s.vx[i] *= 0.1;
         s.vz[i] *= 0.1;
@@ -1059,12 +1096,14 @@ export class World {
       const mul = (r.formation === 'wedge' ? 1.3 : 1) * r.buffMul('atk', t) * (speed / r.unit.run) * terrMul;
       let dmg = r.unit.charge * 2.2 * mul * (0.8 + this.rng() * 0.4) * this.teamAtk[r.team];
       if (er.unit.mounted) dmg *= 0.6;
-      // 正面迎擊、未潰逃的步兵陣列：衝擊力被分散（側面、背後衝鋒仍是全力）
-      const frontMul = front && !er.routing && !er.unit.mounted ? RULES.chargeFrontMul : 1;
+      // 騎兵衝進弓弩陣：相剋
+      if (er.unit.cls === 'missile') dmg *= RULES.chargeVsMissile;
+      // 正面迎擊的步兵陣列：衝擊力被分散（側面、背後衝鋒仍是全力）
+      const frontMul = front && !er.unit.mounted && er.unit.cls !== 'missile' ? RULES.chargeFrontMul : 1;
       dmg *= frontMul;
       if (s.general[j]) dmg *= 0.4;
       this.damage(j, dmg, i);
-      if (s.state[j] === SState.Alive && !s.general[j]) s.stun[j] = 1.0 + this.rng() * 0.6;
+      if (s.state[j] === SState.Alive && !s.general[j]) s.stun[j] = frontMul < 1 ? 0.3 + this.rng() * 0.3 : 0.8 + this.rng() * 0.6;
       // 推開
       if (this.nav.passable(s.x[j] + fx * 0.8, s.z[j] + fz * 0.8)) {
         s.x[j] += fx * 0.8;
@@ -1136,7 +1175,7 @@ export class World {
     const az = s.z[j] + s.vz[j] * dur + this.gauss() * spread;
     const sy = this.groundY(s.x[i], s.z[i]) + 1.5;
     const ty = this.groundY(ax, az) + 0.9;
-    const p = this.proj.spawn(s.x[i], sy, s.z[i], ax, ty, az, this.t, dur, flat ? Math.max(0.5, dist * 0.02) : 8 + dist * 0.22, s.team[i], rd.dmg * r.buffMul('atk', this.t) * SUPPLY_EFFECTS[this.teams[r.team].supply].atk * this.teamAtk[r.team] * this.wx.rangedDmg, rd.ap, r.fireArrows && this.sc.weather !== 'rain', r.id);
+    const p = this.proj.spawn(s.x[i], sy, s.z[i], ax, ty, az, this.t, dur, flat ? Math.max(0.5, dist * 0.02) : 8 + dist * 0.22, s.team[i], rd.dmg * r.buffMul('atk', this.t) * SUPPLY_EFFECTS[this.supplyOf(r)].atk * this.moraleAtkMul(r) * this.teamAtk[r.team] * this.wx.rangedDmg, rd.ap, r.fireArrows && this.sc.weather !== 'rain', r.id);
     if (p >= 0) this.events.push({ k: 'arrow', p });
     s.ammo[i]--;
     s.reload[i] = rd.reload * (0.85 + this.rng() * 0.3);
@@ -1180,7 +1219,7 @@ export class World {
         const er = this.regs[s.reg[best]];
         const eu = er.unit;
         // 箭傷兩極：兩成是致命傷（×5），其餘輕傷（×0.5）
-        let dmg = p.dmg[k] * (this.rng() < 0.2 ? 5 : 0.5);
+        let dmg = p.dmg[k] * (this.rng() < 0.2 ? 5 : 0.5) * RULES.rangedMul;
         const armor = (s.general[best] ? 15 : eu.def) * (1 - p.ap[k]);
         dmg *= 1 - Math.min(0.6, armor * 0.03);
         // 盾牌正面擋箭：機率整支擋下（弩箭破甲較能穿盾）
@@ -1192,6 +1231,8 @@ export class World {
           shielded = true;
         }
         if (er.formation === 'loose') dmg *= 0.6;
+        // 射剋槍：長槍兵沒有盾、陣形密集
+        if (eu.cls === 'pole' && p.team[k] !== s.team[best]) dmg *= RULES.missileVsPole;
         if (this.nav.forestAt(x, z) > 0.4) dmg *= 1 - RULES.forestArrow;
         if (s.team[best] === p.team[k]) dmg *= RULES.friendlyFireMul;
         er.arrowsTaken++;
@@ -1208,8 +1249,17 @@ export class World {
   damage(j: number, dmg: number, by: number, byReg = -1): void {
     const s = this.s;
     if (s.state[j] !== SState.Alive) return;
+    const reg = this.regs[s.reg[j]];
+    // 戰鬥傷害：士氣低落、斷糧時受傷更重
+    if (by >= 0 || byReg >= 0) dmg *= this.takenMul(reg);
+    // 親衛護主：武將身邊還有親衛時，受到的傷害減半
+    if (s.general[j] && reg.general && reg.alive > 3) dmg *= 0.5;
     s.hp[j] -= dmg;
-    if (s.hp[j] > 0) return;
+    if (s.hp[j] > 0) {
+      // 武將重傷 → 撤退（不是陣亡）
+      if (s.general[j] && reg.general?.alive && !reg.unbreakable && s.hp[j] < s.maxHp[j] * RULES.generalRetreatHp) this.retreatGeneral(reg);
+      return;
+    }
     // 戰功
     const killer = by >= 0 ? s.reg[by] : byReg;
     if (killer >= 0 && this.regs[killer] && this.regs[killer].team !== s.team[j]) this.regs[killer].kills++;
@@ -1302,7 +1352,7 @@ export class World {
     for (const r of this.regs) {
       if (r.gone) continue;
       const team = this.teams[r.team];
-      const eff = SUPPLY_EFFECTS[team.supply];
+      const eff = SUPPLY_EFFECTS[this.supplyOf(r)];
       const steady = r.hasBuff('steady', t);
       let dm = 0;
       // 傷亡
@@ -1334,47 +1384,32 @@ export class World {
       }
       // 武將光環：回復到「基礎＋10」為止
       const aura = this.generalAura(r);
-      if (aura > 0 && r.morale < r.baseMorale + 10 && !(this.teams[r.team].panicUntil > t)) dm += RULES.generalAuraRegen * aura * dt;
+      const panic = team.panicUntil > t;
+      if (aura > 0 && r.morale < r.baseMorale + 10 && !panic) dm += RULES.generalAuraRegen * aura * dt;
       // 高於基礎太多會慢慢回落（勝勢的亢奮不會永久）
       if (r.morale > r.baseMorale + 15) dm -= 0.4 * dt;
       // 火
       if (this.fireNear(r.mx, r.mz, 25)) dm -= RULES.fireDrain * dt;
-      // 糧況
-      dm -= eff.moraleDrain * dt;
+      // 糧況：持續流失（到該階段的下限為止）
+      if (r.morale > eff.moraleMin) dm -= eff.moraleDrain * dt;
       // 軍心大亂：持續流失、不回復
-      const panic = team.panicUntil > t;
       if (panic) dm -= RULES.panicDrain * dt;
       // 平靜回復
       const calm = t - r.lastCombatT > 6 && t - (r.chargeShockT ?? 0) > 6;
-      if (calm && !r.routing && !panic) {
+      if (calm && !panic) {
         const target = Math.min(r.baseMorale + (aura > 0 ? 10 : 0), eff.moraleCap);
         if (r.morale < target) dm += RULES.idleRegen * dt;
       }
-      // 地形：高地回復、涉水交戰恐慌（半渡而擊）、己方營寨安心
-      if (r.terrain.high && !r.routing) dm += 0.3 * dt;
+      // 地形：高地回復、涉水交戰恐慌（半渡而擊）、仰攻、己方營寨安心
+      if (r.terrain.high) dm += 0.3 * dt;
       if (r.terrain.wet && r.engagedWith.size > 0) dm -= RULES.fordMorale * dt;
       if (r.engagedWith.size > 0 && r.terrain.relHeight < -5) dm -= RULES.uphillMorale * dt;
-      if (r.terrain.camp && !r.routing) dm += RULES.campMorale * dt;
+      if (r.terrain.camp) dm += RULES.campMorale * dt;
       if (dm < 0) dm *= this.teamGrit[r.team];
       if (steady && dm < 0) dm = 0;
       if (r.general?.alive && r.hasBuff('steady', t)) dm = Math.max(0, dm);
       const cap = panic ? Math.min(eff.moraleCap, RULES.panicCap) : eff.moraleCap + (aura > 0 ? 10 : 0);
       r.morale = Math.max(0, Math.min(cap, r.morale + dm, 100));
-
-      // 狀態轉換
-      if (!r.routing && r.morale < RULES.routThreshold && !r.unbreakable && !steady) this.rout(r);
-      else if (r.routing && r.state === 'routing') {
-        // 潰逃中：脫離敵人後慢慢回復
-        const threatened = r.nearEnemies.some((id) => {
-          const e = this.regs[id];
-          return !e.routing && Math.hypot(e.mx - r.mx, e.mz - r.mz) < 45;
-        });
-        if (!threatened && !panic) {
-          r.calmT += dt;
-          r.morale = Math.min(eff.moraleCap, r.morale + (2.2 * dt * (team.supply === 'starving' ? 0.4 : 1)) / this.teamRally[r.team]);
-        } else r.calmT = 0;
-        if (r.calmT > RULES.rallyDelay * this.teamRally[r.team] && r.morale >= RULES.rallyMorale) this.rally(r);
-      }
     }
   }
 
@@ -1391,97 +1426,190 @@ export class World {
     return best;
   }
 
-  rout(r: Regiment): void {
-    r.routs++;
-    r.calmT = 0;
-    r.routT = 0;
-    // 逃跑路線：尋路到己方後方的地圖邊緣（不會穿越河流、懸崖）
+  /** 戰鬥結束：敗方撤離戰場（沿路線退到己方地圖邊緣） */
+  withdraw(r: Regiment): void {
     const [px, pz] = this.retreatPoint(r);
     const lim = this.hf.play / 2 - 10;
     r.path = this.nav.findPath(r.mx, r.mz, Math.max(-lim, Math.min(lim, px)), Math.max(-lim, Math.min(lim, pz)));
     r.pathI = 0;
     r.fireTarget = -1;
     for (const i of r.members) this.s.target[i] = -1;
-    if (r.routs >= RULES.maxRouts) {
-      r.state = 'shattered';
-      this.events.push({ k: 'shattered', reg: r.id });
-    } else {
-      r.state = 'routing';
-      this.events.push({ k: 'rout', reg: r.id });
-    }
-    // 連鎖：附近友軍受驚、敵軍振奮
-    for (const o of this.regs) {
-      if (o === r || o.gone) continue;
-      const d = Math.hypot(o.mx - r.mx, o.mz - r.mz);
-      if (d > 55) continue;
-      if (o.team === r.team) {
-        if (!o.hasBuff('steady', this.t)) o.morale -= RULES.friendRoutShock * this.teamGrit[o.team];
-      } else o.morale = Math.min(100, o.morale + RULES.enemyRoutBoost);
-    }
+    r.state = 'routing';
   }
 
-  rally(r: Regiment): void {
-    r.state = 'ready';
-    r.calmT = 0;
-    r.cx = r.mx;
-    r.cz = r.mz;
-    r.facing = this.faceEnemy(r);
-    r.order = { type: 'idle', x: r.cx, z: r.cz, facing: r.facing, target: -1, struct: -1 };
-    r.path = [];
-    this.reslot(r);
-    this.events.push({ k: 'rally', reg: r.id });
+  /** 是否為會決定勝負的主帥（劇本可用 commanderLoss: false 關掉，例如教學關） */
+  isCommander(team: number, id: string): boolean {
+    const ts = this.sc.teams[team];
+    return ts.commander === id && ts.commanderLoss !== false;
+  }
+
+  /** 武將撤退：武將單騎回本陣離場，士兵留下繼續戰鬥；主帥撤退＝全軍敗退 */
+  retreatGeneral(r: Regiment): void {
+    const g = r.general;
+    if (!g || !g.alive) return;
+    const s = this.s;
+    const gi = g.soldier;
+    const idx = r.members.indexOf(gi);
+    if (idx >= 0) r.members.splice(idx, 1);
+    g.alive = false;
+    g.fled = true;
+    const pool = new Regiment(this.regs.length, r.team, r.faction, r.unit, `${g.name}（撤退）`);
+    pool.state = 'shattered';
+    pool.retreatHome = true;
+    this.regs.push(pool);
+    pool.members.push(gi);
+    s.reg[gi] = pool.id;
+    s.target[gi] = -1;
+    s.stun[gi] = 0;
+    const hq = this.teams[r.team].hq;
+    const [tx, tz] = hq && !hq.burnt ? [hq.x, hq.z] : this.retreatPoint(r);
+    pool.path = this.nav.findPath(s.x[gi], s.z[gi], tx, tz);
+    pool.pathI = 0;
+    pool.mx = s.x[gi];
+    pool.mz = s.z[gi];
+    if (r.members.length === 0) r.state = 'destroyed';
+    else r.needReslot = true;
+    this.teams[1 - r.team].generalsBeaten++;
+    this.events.push({ k: 'generalRetreat', reg: r.id, name: g.name });
+    for (const o of this.regs) {
+      if (o.gone) continue;
+      if (o.team === r.team) o.morale -= (o === r ? RULES.generalDeathOwn : RULES.generalDeathArmy) * this.teamGrit[o.team];
+      else o.morale = Math.min(100, o.morale + 5);
+    }
+    if (this.isCommander(r.team, g.id)) {
+      this.events.push({ k: 'msg', text: `主帥${g.name}撤退！${this.teams[r.team].name}全軍敗退`, tone: r.team === this.player ? 'bad' : 'gold' });
+      this.finish(1 - r.team);
+    }
   }
 
   private onGeneralDown(r: Regiment): void {
     const name = r.general!.name;
     this.events.push({ k: 'generalDown', reg: r.id, name });
+    this.teams[1 - r.team].generalsBeaten++;
     for (const o of this.regs) {
       if (o.gone) continue;
-      if (o.team === r.team) o.morale -= o === r ? RULES.generalDeathOwn : RULES.generalDeathArmy;
+      if (o.team === r.team) o.morale -= (o === r ? RULES.generalDeathOwn : RULES.generalDeathArmy) * this.teamGrit[o.team];
       else o.morale = Math.min(100, o.morale + 10);
     }
-    const ts = this.sc.teams[r.team];
-    if (ts.commander === r.general!.id && ts.commanderLoss) this.finish(1 - r.team);
+    // 主帥陣亡＝全軍敗退
+    if (this.isCommander(r.team, r.general!.id)) {
+      this.events.push({ k: 'msg', text: `主帥${name}陣亡！${this.teams[r.team].name}全軍敗退`, tone: r.team === this.player ? 'bad' : 'gold' });
+      this.finish(1 - r.team);
+    }
   }
 
   // ───────────────────────── 糧草與建築（docs/03） ─────────────────────────
 
+  /** 補給來源：糧倉與水源（沒有的話用營寨）；都沒有＝這場不打糧草戰 */
+  supplySources(team: TeamState): Structure[] {
+    const main = team.depots.filter((d) => d.kind === 'depot' || d.kind === 'water');
+    return main.length ? main : team.depots.filter((d) => d.kind === 'camp');
+  }
+
+  /** 糧道：偵測敵軍佔住糧道（附近沒有我軍）→ 持續 8 秒切斷；敵軍離開立刻恢復 */
+  private stepLines(dt: number): void {
+    for (const team of this.teams) {
+      if (!team.hq) continue;
+      for (const st of this.supplySources(team)) {
+        if (st.route.length < 2 || st.burnt || st.team !== st.owner) continue;
+        let found = false;
+        for (const e of this.regs) {
+          if (e.team === st.owner || e.gone || e.alive < 5) continue;
+          const [d, px, pz] = distToRoute(st.route, e.mx, e.mz);
+          if (d > RULES.lineCutRadius + e.radius * 0.5) continue;
+          // 附近有我軍：爭奪中，還沒斷
+          const guarded = this.regs.some((f) => f.team === st.owner && !f.gone && f.alive > 0 && Math.hypot(f.mx - e.mx, f.mz - e.mz) < RULES.lineGuardRadius + f.radius * 0.5);
+          if (guarded) continue;
+          found = true;
+          if (!st.cut) {
+            st.cutX = px;
+            st.cutZ = pz;
+          }
+          break;
+        }
+        if (found) {
+          st.cutT += dt;
+          if (st.cutT >= RULES.lineCutTime) st.cut = true;
+        } else {
+          st.cutT = 0;
+          st.cut = false;
+        }
+      }
+    }
+  }
+
+  /** 軍團是否在補給範圍內：己方半場、糧道沿線、己方營寨附近 */
+  inSupplyArea(r: Regiment): boolean {
+    const team = this.teams[r.team];
+    const hq = team.hq;
+    if (!hq) return true;
+    const ehq = this.teams[1 - r.team]?.hq;
+    const dOwn = Math.hypot(r.mx - hq.x, r.mz - hq.z);
+    if (!ehq || dOwn <= Math.hypot(r.mx - ehq.x, r.mz - ehq.z) + 40) return true;
+    for (const st of team.depots) {
+      if (st.burnt || st.team !== r.team) continue;
+      if (st.kind === 'camp' && Math.hypot(r.mx - st.x, r.mz - st.z) < RULES.campSupplyRadius) return true;
+      if (st.route.length > 1 && !st.cut && distToRoute(st.route, r.mx, r.mz)[0] < RULES.lineSupplyWidth) return true;
+    }
+    return false;
+  }
+
+  /** 軍團實際的糧況：全軍糧況與「深入敵境太久」取較差者 */
+  supplyOf(r: Regiment): SupplyState {
+    const ts = this.teams[r.team].supply;
+    const own: SupplyState = r.outT > RULES.outStarveSec ? 'starving' : r.outT > RULES.outLowSec ? 'low' : 'ok';
+    return SUPPLY_RANK[own] > SUPPLY_RANK[ts] ? own : ts;
+  }
+
   private stepSupply(dt: number): void {
+    if (this.started) this.stepLines(dt);
     for (const team of this.teams) {
       const hq = team.hq;
       if (!hq) continue;
-      const alive = this.regs.filter((r) => r.team === team.index && !r.gone).reduce((a, r) => a + r.alive, 0);
-      // 沒有任何補給點（糧倉／營寨／水源）的軍隊：劇本不打糧草戰，不消耗本陣存糧
-      if (this.started && !hq.burnt && team.depots.length > 0) hq.stock = Math.max(0, hq.stock - RULES.hqConsumePerSoldier * alive * dt * team.consume);
-      const depotsAlive = team.depots.some((d) => d.kind !== 'water' && !d.burnt && d.stock > 0);
-      const hasDepots = team.depots.some((d) => d.kind !== 'water');
-      const water = team.depots.find((d) => d.kind === 'water');
-      let state: SupplyState = 'ok';
+      const sources = this.supplySources(team);
+      // 沒有任何補給點：這場不打糧草戰
+      if (!sources.length) continue;
+      // 主糧倉（例：烏巢）被焚＝命脈斷絕；否則至少一條糧道暢通即可
+      const mainLost = sources.some((d) => d.main && d.burnt);
+      const lineOk = !mainLost && !hq.burnt && sources.some((d) => !d.burnt && d.team === d.owner && !d.cut);
+      const use = (hq.maxStock / RULES.reserveSec) * team.consume * dt;
+      if (this.started && !hq.burnt) hq.stock = lineOk ? Math.min(hq.maxStock, hq.stock + use * (RULES.lineFlow - 1)) : Math.max(0, hq.stock - use);
       const f = hq.burnt ? 0 : hq.frac;
-      const mainLost = team.depots.some((d) => d.main && d.burnt);
-      if (f <= 0.1) state = 'starving';
-      else if (f <= 0.4 || (hasDepots && !depotsAlive) || mainLost) state = 'low';
-      // 水源被敵軍控制 → 斷水
-      if (water && water.team !== team.index) state = f > 0.25 ? 'low' : 'starving';
+      const state: SupplyState = lineOk ? 'ok' : f > RULES.lowFrac ? 'cut' : f > 0.02 ? 'low' : 'starving';
+      if (lineOk !== team.lineOk) {
+        team.lineOk = lineOk;
+        if (!lineOk) {
+          const src = sources.find((d) => d.cut) ?? sources.find((d) => d.burnt || d.team !== d.owner) ?? sources[0];
+          const burnt = !src.cut;
+          this.events.push({ k: 'lineCut', team: team.index, x: burnt ? src.x : src.cutX, z: burnt ? src.z : src.cutZ, burnt });
+          for (const r of this.regs) if (r.team === team.index && !r.gone) r.morale -= RULES.lineCutShock * this.teamGrit[r.team];
+        } else this.events.push({ k: 'lineRestored', team: team.index });
+      }
       if (state !== team.supply) {
-        const worse = rank(state) > rank(team.supply);
+        const worse = SUPPLY_RANK[state] > SUPPLY_RANK[team.supply];
         team.supply = state;
-        this.events.push({ k: 'supply', team: team.index, state });
+        if (state !== 'cut' && state !== 'ok') this.events.push({ k: 'supply', team: team.index, state });
         if (worse && state === 'starving') {
-          for (const r of this.regs) if (r.team === team.index && !r.gone) r.morale -= 8;
+          for (const r of this.regs) if (r.team === team.index && !r.gone) r.morale -= 8 * this.teamGrit[r.team];
         }
       }
-      // 斷糧逃兵：動搖的軍團每 10 秒逃 2%
-      if (state === 'starving' && this.tick % 300 === 0) {
-        for (const r of this.regs) {
-          if (r.team !== team.index || r.gone || r.morale > RULES.waverThreshold) continue;
-          const n = Math.max(1, Math.floor(r.alive * 0.02));
-          for (let k = 0, p = r.members.length - 1; k < n && p >= 0 && r.members.length > 1; p--) {
-            const i = r.members[p];
-            if (this.s.general[i]) continue;
-            this.desert(i);
-            k++;
-          }
+    }
+    // 深入敵境、遠離己方糧道：遠征的部隊慢慢斷糧
+    for (const r of this.regs) {
+      if (r.gone || !this.started) continue;
+      if (!this.supplySources(this.teams[r.team]).length) continue;
+      r.outT = this.inSupplyArea(r) ? Math.max(0, r.outT - 2 * dt) : r.outT + dt;
+    }
+    // 斷糧減員：每 10 秒 1%（士兵悄悄離隊）
+    if (this.tick % 300 === 0) {
+      for (const r of this.regs) {
+        if (r.gone || r.alive < 10 || this.supplyOf(r) !== 'starving') continue;
+        const n = Math.max(1, Math.floor(r.alive * 0.01));
+        for (let k = 0, p = r.members.length - 1; k < n && p >= 0 && r.members.length > 1; p--) {
+          const i = r.members[p];
+          if (this.s.general[i]) continue;
+          this.desert(i);
+          k++;
         }
       }
     }
@@ -1491,10 +1619,9 @@ export class World {
   private stepResupply(): void {
     for (const r of this.regs) {
       r.inSupply = false;
-      if (r.gone || r.routing) continue;
-      const team = this.teams[r.team];
-      const hq = team.hq;
-      if (!hq || hq.burnt || team.supply === 'starving') continue;
+      if (r.gone) continue;
+      const hq = this.teams[r.team].hq;
+      if (!hq || hq.burnt || this.supplyOf(r) === 'starving') continue;
       if (Math.hypot(r.mx - hq.x, r.mz - hq.z) > RULES.supplyRadius) continue;
       r.inSupply = true;
       const rd = r.unit.ranged;
@@ -1544,7 +1671,7 @@ export class World {
           if (d < defR) friends++;
         } else if (d < st.radius + RULES.depotIgniteRadius * 0.5) {
           enemies++;
-          if (r.type === 'lightcav') raidMul = Math.max(raidMul, 3);
+          if (r.type === 'cav') raidMul = Math.max(raidMul, 3);
           if (r.buffs.some((b) => b.id === 'raid' && b.until > this.t)) raidMul = Math.max(raidMul, 6);
         }
       }
@@ -1570,7 +1697,8 @@ export class World {
         } else st.capture = Math.max(0, st.capture - dt / 30);
         continue;
       }
-      if (enemies > 0 && friends === 0) {
+      // 縱火：敵兵壓過守軍兩倍以上（守軍只剩零星殘兵也擋不住）
+      if (enemies > 0 && enemies > friends * 2) {
         st.attackedT = this.t;
         const before = st.ignite;
         st.ignite = Math.min(1, st.ignite + (dt / 12) * raidMul * Math.min(3, 0.5 + enemies / 10));
@@ -1679,13 +1807,12 @@ export class World {
         if (!team.hq || team.hq.burnt) continue;
         for (const d of team.depots) {
           // 糧倉與營寨都會派輜重車（營寨存糧少、間隔長一點）
-          if (d.burnt || (d.kind !== 'depot' && d.kind !== 'camp') || d.stock < RULES.wagonLoad) continue;
+          if (d.burnt || d.cut || (d.kind !== 'depot' && d.kind !== 'camp') || d.stock < RULES.wagonLoad || d.route.length < 2) continue;
           d.wagonT -= 1;
           if (d.wagonT > 0) continue;
           d.wagonT = RULES.wagonInterval * (d.kind === 'camp' ? 1.6 : 1) * (0.8 + this.rng() * 0.4);
-          const path = this.nav.findPath(d.x, d.z, team.hq.x, team.hq.z);
           d.stock -= RULES.wagonLoad;
-          this.wagons.push(new Wagon(this.wagons.length, team.index, d.id, d.x + 8, d.z + 8, path, RULES.wagonLoad));
+          this.wagons.push(new Wagon(this.wagons.length, team.index, d.id, d.route[0][0], d.route[0][1], d.route.slice(1), RULES.wagonLoad));
         }
       }
     }
@@ -1696,8 +1823,6 @@ export class World {
       w.pz = w.z;
       if (w.pathI >= w.path.length) {
         w.arrived = true;
-        const hq = this.teams[w.team].hq;
-        if (hq && !hq.burnt) hq.stock = Math.min(hq.maxStock, hq.stock + w.load);
         continue;
       }
       const [tx, tz] = w.path[w.pathI];
@@ -1729,6 +1854,8 @@ export class World {
           if (w.hp <= 0) {
             w.alive = false;
             this.teams[w.team].wagonsLost++;
+            const hq = this.teams[w.team].hq;
+            if (hq && !hq.burnt) hq.stock = Math.max(0, hq.stock - w.load * 0.5);
             for (const r of this.regs) if (r.team === w.team && !r.gone) r.morale -= 3;
             this.events.push({ k: 'wagonLost', team: w.team });
           }
@@ -1785,12 +1912,9 @@ export class World {
   private checkEnd(): void {
     if (this.over || !this.started) return;
     for (const team of this.teams) {
-      const mine = this.regs.filter((r) => r.team === team.index && !r.gone && r.alive > 0 && r.name !== '逃兵');
-      const standing = mine.filter((r) => !r.routing).reduce((a, r) => a + r.alive, 0);
-      // 還能重整的潰兵（未潰散、不在軍心大亂中）也算在兵力內，避免一波潰逃就直接判敗
-      const panic = team.panicUntil > this.t;
-      const recoverable = standing + mine.filter((r) => r.routing && r.state === 'routing' && r.routs < RULES.maxRouts && !panic).reduce((a, r) => a + r.alive, 0);
-      if (standing === 0 || recoverable < team.initialStrength * RULES.defeatStanding) {
+      // 殲滅九成：剩下的兵力不到開戰時的一成（主帥撤退／陣亡另在發生時判定）
+      const alive = this.regs.filter((r) => r.team === team.index && !r.gone && r.name !== '逃兵').reduce((a, r) => a + r.alive, 0);
+      if (alive === 0 || alive < team.initialStrength * RULES.defeatRemain) {
         this.finish(1 - team.index);
         return;
       }
@@ -1804,8 +1928,8 @@ export class World {
     this.winner = winner;
     this.flags.endT = this.t;
     this.events.push({ k: 'end', winner });
-    // 敗方全軍潰逃
-    for (const r of this.regs) if (r.team !== winner && !r.gone && !r.routing) this.rout(r);
+    // 敗方撤離戰場
+    for (const r of this.regs) if (r.team !== winner && !r.gone && !r.routing) this.withdraw(r);
   }
 
   private runTriggers(): void {
@@ -1868,8 +1992,9 @@ export class World {
   duelBan: ((a: string, b: string) => boolean) | null = null;
   /** 劇本指定的單挑結果（回傳 null 表示照武力擲骰） */
   duelFate: ((a: string, b: string) => { winner: string; killed: boolean } | null) | null = null;
-  /** 兩軍武將在 8 m 內相遇 → 單挑：依武力判勝負 */
+  /** 史實單挑：劇本指定的兩位武將在 8 m 內相遇才觸發（沒有隨機單挑） */
   private checkDuels(): void {
+    if (!this.duelFate) return;
     const s = this.s;
     const gens = this.regs.filter((r) => r.general?.alive && !r.routing && !r.gone && r.order.type !== 'retreat' && (this.genDuelT.get(r.general.id) ?? -999) < this.t - 120);
     for (const a of gens) {
@@ -1880,6 +2005,7 @@ export class World {
         const d = Math.hypot(s.x[ia] - s.x[ib], s.z[ia] - s.z[ib]);
         if (d > 8) continue;
         if (this.duelBan?.(a.general!.id, b.general!.id)) continue;
+        if (!this.duelFate(a.general!.id, b.general!.id)) continue;
         const key = `${a.general!.id}|${b.general!.id}`;
         if ((this.duelT.get(key) ?? -999) > this.t - 60) continue;
         this.duelT.set(key, this.t);
@@ -1932,7 +2058,6 @@ export class World {
       case 'rally':
         for (const o of within(120, r.team)) {
           o.morale = Math.min(100, o.morale + 30);
-          if (o.state === 'routing') this.rally(o);
         }
         break;
       case 'berserk':
@@ -2064,7 +2189,6 @@ export class World {
       case 'retreat': {
         const r = this.regs[rid];
         if (!r || r.team !== team || r.gone) return '請選擇己方軍團';
-        if (r.state === 'routing') this.rally(r);
         this.commandRetreat([rid]);
         r.buffs.push({ id: 'gong', until: t + 15, steady: true });
         break;
@@ -2167,8 +2291,52 @@ export class World {
   }
 }
 
-function rank(s: SupplyState): number {
-  return s === 'ok' ? 0 : s === 'low' ? 1 : 2;
+/** 兵種相剋（近戰）：槍剋騎、騎剋射、盾剋槍 */
+export function counterMul(att: UnitDef, def: UnitDef): number {
+  if (def.cls === 'cav') return att.vsCav;
+  if (att.cls === 'cav' && def.cls === 'missile') return RULES.cavVsMissile;
+  if (att.cls === 'shield' && def.cls === 'pole') return RULES.shieldVsPole;
+  return 1;
+}
+
+/** 路線加密：相鄰點不超過 step 公尺 */
+function densify(pts: [number, number][], step: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let k = 0; k < pts.length; k++) {
+    const [x, z] = pts[k];
+    if (k > 0) {
+      const [px, pz] = pts[k - 1];
+      const d = Math.hypot(x - px, z - pz);
+      const n = Math.floor(d / step);
+      for (let q = 1; q < n; q++) out.push([px + ((x - px) * q) / n, pz + ((z - pz) * q) / n]);
+    }
+    out.push([x, z]);
+  }
+  return out;
+}
+
+/** 點到折線的最短距離與最近點 */
+export function distToRoute(route: [number, number][], x: number, z: number): [number, number, number] {
+  let best = Infinity;
+  let bx = route[0][0];
+  let bz = route[0][1];
+  for (let k = 1; k < route.length; k++) {
+    const [ax, az] = route[k - 1];
+    const [cx, cz] = route[k];
+    const dx = cx - ax;
+    const dz = cz - az;
+    const l2 = dx * dx + dz * dz || 1;
+    const u = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+    const px = ax + dx * u;
+    const pz = az + dz * u;
+    const d = Math.hypot(x - px, z - pz);
+    if (d < best) {
+      best = d;
+      bx = px;
+      bz = pz;
+    }
+  }
+  return [best, bx, bz];
 }
 
 export function angDiff(a: number, b: number): number {

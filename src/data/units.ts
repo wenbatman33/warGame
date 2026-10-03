@@ -1,7 +1,11 @@
 // 兵種數值（docs/02 §1）；DEV 工具可即時調整
 import type { ModelKey } from '../models/soldier';
 
-export type UnitTypeId = 'sword' | 'spear' | 'halberd' | 'archer' | 'crossbow' | 'lightcav' | 'heavycav' | 'horsearcher' | 'guard';
+/** 四種兵種＋武將親衛：刀盾、長槍、弓兵、騎兵（相剋圈：槍剋騎、騎剋弓、弓剋槍、盾剋槍） */
+export type UnitTypeId = 'sword' | 'spear' | 'archer' | 'cav' | 'guard';
+
+/** 相剋分類：盾（刀盾兵）、槍（長槍兵）、射（弓兵）、騎（騎兵、親衛） */
+export type UnitClass = 'shield' | 'pole' | 'missile' | 'cav';
 
 export interface RangedDef {
   dmg: number;
@@ -30,8 +34,12 @@ export interface UnitDef {
   charge: number;
   /** 近戰距離 */
   reach: number;
-  /** 對騎兵倍率 */
+  /** 相剋分類 */
+  cls: UnitClass;
+  /** 對騎兵倍率（槍剋騎） */
   vsCav: number;
+  /** 正面受到近戰傷害的倍率（盾牌、兵器朝前；側面、背後另計） */
+  front: number;
   /** 正面盾牌擋箭比例 */
   shield: number;
   /** 陣位間距 [橫, 縱] */
@@ -48,50 +56,28 @@ export interface UnitDef {
 export const UNITS: Record<UnitTypeId, UnitDef> = {
   sword: {
     id: 'sword', name: '刀盾兵', short: '刀盾', model: 'sword', count: 150, hp: 100, atk: 12, def: 9, walk: 3.0, run: 5.0, mounted: false,
-    charge: 4, reach: 1.5, vsCav: 1, shield: 0.5, spacing: [0.98, 1.2], width: 24, morale: 70, rate: 1.2, icon: '🛡️',
-    desc: '主力步兵。盾牌正面擋箭 50%，攻守平衡，頂住正面的中堅。',
+    charge: 4, reach: 1.5, cls: 'shield', vsCav: 1, front: 0.7, shield: 0.6, spacing: [0.98, 1.2], width: 24, morale: 70, rate: 1.2, icon: '🛡️',
+    desc: '前排肉盾：正面很硬、盾牌擋箭 60%；近身剋長槍兵。怕騎兵從側面衝。',
   },
   spear: {
     id: 'spear', name: '長槍兵', short: '長槍', model: 'spear', count: 150, hp: 90, atk: 10, def: 7, walk: 2.8, run: 4.6, mounted: false,
-    charge: 3, reach: 2.3, vsCav: 2.5, shield: 0, spacing: [0.95, 1.15], width: 24, morale: 68, rate: 1.25, icon: '🔱',
-    desc: '騎兵剋星：對騎兵傷害 ×2.5；「堅守」時擺出拒馬陣，騎兵正面衝鋒反吃三倍傷害。',
-  },
-  halberd: {
-    id: 'halberd', name: '大戟士', short: '大戟', model: 'ji', count: 120, hp: 125, atk: 15, def: 11, walk: 2.6, run: 4.2, mounted: false,
-    charge: 6, reach: 2.0, vsCav: 1.6, shield: 0, spacing: [1.0, 1.2], width: 20, morale: 78, rate: 1.35, icon: '⚔️',
-    desc: '重裝精銳步兵，攻防兼備、士氣高，衝擊力強。',
+    charge: 3, reach: 2.3, cls: 'pole', vsCav: 2.4, front: 0.8, shield: 0, spacing: [0.95, 1.15], width: 24, morale: 68, rate: 1.25, icon: '🔱',
+    desc: '騎兵剋星：對騎兵傷害 ×2.4；「堅守」時擺出拒馬，騎兵正面衝鋒反吃三倍傷害。怕弓弩與刀盾。',
   },
   archer: {
     id: 'archer', name: '弓兵', short: '弓兵', model: 'archer', count: 100, hp: 70, atk: 5, def: 3, walk: 3.0, run: 5.2, mounted: false,
     ranged: { dmg: 11, range: 135, reload: 6, ammo: 30, arc: 'high', ap: 0 },
-    charge: 0, reach: 1.4, vsCav: 1, shield: 0, spacing: [1.05, 1.3], width: 20, morale: 60, rate: 1.4, icon: '🏹',
-    desc: '拋射箭雨可越過前排，射程最遠；肉搏很弱，要有人保護。可射火矢點燃糧倉。',
+    charge: 0, reach: 1.4, cls: 'missile', vsCav: 1, front: 1, shield: 0, spacing: [1.05, 1.3], width: 20, morale: 60, rate: 1.4, icon: '🏹',
+    desc: '拋射箭雨越過前排，射程最遠；剋長槍兵（×1.5）。被騎兵近身就完了，要有人保護。可射火矢點燃糧倉。',
   },
-  crossbow: {
-    id: 'crossbow', name: '弩兵', short: '弩兵', model: 'crossbow', count: 90, hp: 75, atk: 5, def: 4, walk: 2.8, run: 4.8, mounted: false,
-    ranged: { dmg: 22, range: 105, reload: 7.5, ammo: 20, arc: 'flat', ap: 0.5 },
-    charge: 0, reach: 1.4, vsCav: 1, shield: 0, spacing: [1.05, 1.3], width: 20, morale: 62, rate: 1.4, icon: '🎯',
-    desc: '平射破甲，傷害高但裝填慢、射程較短。',
-  },
-  lightcav: {
-    id: 'lightcav', name: '輕騎兵', short: '輕騎', model: 'lightcav', count: 60, hp: 130, atk: 10, def: 5, walk: 6.0, run: 11, mounted: true,
-    charge: 16, reach: 2.2, vsCav: 1, shield: 0.2, spacing: [1.95, 2.9], width: 12, morale: 66, rate: 1.0, icon: '🐎',
-    desc: '最快的部隊：繞後、追擊潰兵（×1.5）、縱火燒糧（對糧倉 ×3）。',
-  },
-  heavycav: {
-    id: 'heavycav', name: '重騎兵', short: '重騎', model: 'heavycav', count: 50, hp: 185, atk: 14, def: 12, walk: 5.2, run: 9.5, mounted: true,
-    charge: 36, reach: 2.4, vsCav: 1, shield: 0, spacing: [2.0, 3.0], width: 10, morale: 76, rate: 1.1, icon: '🏇',
-    desc: '毀滅性的衝鋒：撞穿未堅守的步兵；但怕長槍拒馬。',
-  },
-  horsearcher: {
-    id: 'horsearcher', name: '騎射手', short: '騎射', model: 'horsearcher', count: 50, hp: 110, atk: 6, def: 4, walk: 6.0, run: 10.5, mounted: true,
-    ranged: { dmg: 10, range: 100, reload: 5, ammo: 24, arc: 'flat', ap: 0 },
-    charge: 6, reach: 2.2, vsCav: 1, shield: 0, spacing: [1.95, 2.9], width: 10, morale: 64, rate: 1.0, icon: '🐴',
-    desc: '機動射手，邊走邊射、打了就跑。',
+  cav: {
+    id: 'cav', name: '騎兵', short: '騎兵', model: 'lightcav', count: 60, hp: 160, atk: 12, def: 8, walk: 5.6, run: 10.5, mounted: true,
+    charge: 26, reach: 2.3, cls: 'cav', vsCav: 1, front: 0.9, shield: 0.1, spacing: [1.95, 2.9], width: 12, morale: 72, rate: 1.05, icon: '🐎',
+    desc: '機動與衝擊：從側面、背後衝鋒最致命（正面衝列陣步兵只剩一半）；斷糧道、截輜重、縱火燒糧（×3）。剋弓兵，怕長槍。',
   },
   guard: {
-    id: 'guard', name: '親衛隊', short: '親衛', model: 'heavycav', count: 30, hp: 170, atk: 14, def: 12, walk: 5.2, run: 9.5, mounted: true,
-    charge: 26, reach: 2.4, vsCav: 1, shield: 0, spacing: [2.0, 3.0], width: 8, morale: 85, rate: 1.05, icon: '⭐',
+    id: 'guard', name: '親衛隊', short: '親衛', model: 'heavycav', count: 50, hp: 170, atk: 14, def: 12, walk: 5.2, run: 9.5, mounted: true,
+    charge: 26, reach: 2.4, cls: 'cav', vsCav: 1, front: 0.85, shield: 0, spacing: [2.0, 3.0], width: 8, morale: 85, rate: 1.05, icon: '⭐',
     desc: '武將的親衛騎兵，跟著武將衝鋒陷陣。',
   },
 };

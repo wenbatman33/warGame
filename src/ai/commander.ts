@@ -1,8 +1,9 @@
 // 敵軍指揮官 AI（docs/04 §4）：戰略層（進攻／防守／劫糧）＋ 戰術層（各軍團依角色行動）
 import { GENERALS } from '../data/generals';
+import { RULES } from '../data/rules';
 import type { TeamSpec } from '../data/scenario';
 import type { Regiment } from '../sim/regiment';
-import type { World } from '../sim/world';
+import { distToRoute, type World } from '../sim/world';
 
 type Plan = NonNullable<TeamSpec['ai']>;
 
@@ -14,6 +15,8 @@ export class AiCommander {
   /** 騎兵衝鋒循環：交戰開始時間 */
   private engagedSince = new Map<number, number>();
   private pullback = new Map<number, number>();
+  /** 斷糧道部隊的目標點 */
+  private raidPt = new Map<number, { x: number; z: number; t: number }>();
 
   constructor(
     private w: World,
@@ -40,8 +43,18 @@ export class AiCommander {
     }
     if (this.diff !== 'easy' && started) this.stratagems(mine, enemies);
     this.defendHq(mine, enemies);
+    this.defendLine(mine, enemies);
+    const cid = w.sc.teams[this.team].commander;
     for (const r of mine) {
       this.ability(r, enemies);
+      // 主帥重傷：撤回本陣保命（主帥撤退或陣亡＝全軍敗退）
+      if (cid && r.general?.alive && r.general.id === cid) {
+        const gi = r.general.soldier;
+        if (w.s.hp[gi] < w.s.maxHp[gi] * 0.55) {
+          if (r.order.type !== 'retreat') w.commandRetreat([r.id]);
+          continue;
+        }
+      }
       switch (r.ai.role) {
         case 'guard':
           this.guard(r, enemies);
@@ -174,7 +187,6 @@ export class AiCommander {
       let score = -d * 0.4;
       if (e.ranged) score += 70;
       if (e.engagedWith.size > 0) score += 55;
-      if (e.routing) score += r.type === 'lightcav' ? 60 : 20;
       if (e.type === 'spear') score -= e.hold ? 120 : 45;
       if (e.unit.mounted) score -= 15;
       if (score > bs) {
@@ -187,22 +199,69 @@ export class AiCommander {
     } else this.defensive(r, enemies, 120);
   }
 
-  /** 劫糧：繞過主力攻擊敵方糧倉 */
+  /** 斷糧道：繞到敵軍糧道上遠離敵軍的位置站住，切斷補給；沒人守的糧倉就直接燒 */
   private raider(r: Regiment, enemies: Regiment[]): void {
     const w = this.w;
     if (r.engagedWith.size > 0) return;
-    const target = w.structs.filter((s) => s.team !== this.team && !s.burnt && s.kind === 'depot').sort((a, b) => Math.hypot(a.x - r.mx, a.z - r.mz) - Math.hypot(b.x - r.mx, b.z - r.mz))[0];
-    if (!target) {
+    const foe = w.teams[1 - this.team];
+    const sources = w.supplySources(foe).filter((s) => !s.burnt && s.team === s.owner && s.route.length > 1);
+    if (!sources.length) {
       r.ai.role = 'flank';
       return;
     }
-    // 被大軍攔截：改打附近的弱者或撤回
+    // 被大軍攔截：撤回
     const block = this.nearest(r, enemies, (e) => this.dist(r, e) < 40 && !e.ranged);
     if (block && block.alive > r.alive * 1.5) {
+      this.raidPt.delete(r.id);
       w.commandMove([r.id], r.ai.homeX, r.ai.homeZ, undefined, undefined, true);
       return;
     }
-    if (r.order.struct !== target.id) w.commandAttackStruct([r.id], target.id);
+    // 糧倉沒人守：直接縱火
+    const depot = sources.find((s) => s.kind === 'depot' && Math.hypot(s.x - r.mx, s.z - r.mz) < 160 && !enemies.some((e) => Math.hypot(e.mx - s.x, e.mz - s.z) < 60));
+    if (depot) {
+      if (r.order.struct !== depot.id) w.commandAttackStruct([r.id], depot.id);
+      return;
+    }
+    // 挑糧道上離敵軍最遠、離自己不太遠的點
+    let pt = this.raidPt.get(r.id);
+    const threatened = pt && enemies.some((e) => Math.hypot(e.mx - pt!.x, e.mz - pt!.z) < 50);
+    if (!pt || threatened || w.t - pt.t > 40) {
+      let best = -Infinity;
+      for (const st of sources) {
+        for (let k = 0; k < st.route.length; k += 4) {
+          const [x, z] = st.route[k];
+          let near = 220;
+          for (const e of enemies) near = Math.min(near, Math.hypot(e.mx - x, e.mz - z));
+          const score = near - Math.hypot(x - r.mx, z - r.mz) * 0.35;
+          if (score > best) {
+            best = score;
+            pt = { x, z, t: w.t };
+          }
+        }
+      }
+      if (pt) this.raidPt.set(r.id, pt);
+    }
+    if (!pt) return;
+    const d = Math.hypot(pt.x - r.mx, pt.z - r.mz);
+    if (d > 14) {
+      if (r.order.type !== 'move' || Math.hypot(r.order.x - pt.x, r.order.z - pt.z) > 10) w.commandMove([r.id], pt.x, pt.z, undefined, undefined, true);
+    } else if (r.order.type === 'move') w.commandHalt([r.id]);
+  }
+
+  /** 糧道被敵軍佔住：派最近的空閒部隊去趕走 */
+  private defendLine(mine: Regiment[], enemies: Regiment[]): void {
+    const w = this.w;
+    for (const st of w.supplySources(w.teams[this.team])) {
+      if (st.burnt || st.route.length < 2 || (st.cutT <= 0 && !st.cut)) continue;
+      const t = enemies.find((e) => distToRoute(st.route, e.mx, e.mz)[0] < RULES.lineCutRadius + e.radius);
+      if (!t) continue;
+      const free = mine
+        .filter((r) => r.engagedWith.size === 0 && !r.ranged && r.ai.role !== 'raider' && r.order.target !== t.id)
+        .sort((a, b) => (b.unit.mounted ? 1 : 0) - (a.unit.mounted ? 1 : 0) || this.dist(a, t) - this.dist(b, t))
+        .slice(0, t.alive > 80 ? 2 : 1);
+      if (mine.some((r) => r.order.target === t.id)) continue;
+      for (const r of free) w.commandAttack([r.id], t.id, true);
+    }
   }
 
   /** 守倉：敵軍靠近就出擊，追太遠就回來 */

@@ -101,6 +101,35 @@ export class Minimap {
     const w = this.w;
     g.imageSmoothingEnabled = true;
     g.drawImage(this.base, 0, 0, s, s);
+    // 糧道路線：己方顏色；被切斷紅色、補給點失守灰色
+    for (const team of w.teams) {
+      for (const st of w.supplySources(team)) {
+        if (st.route.length < 2) continue;
+        const lost = st.burnt || st.team !== st.owner;
+        g.strokeStyle = lost ? 'rgba(90,80,70,0.7)' : st.cut ? '#ff3b2f' : team.color;
+        g.lineWidth = st.cut ? 2.5 : 2;
+        g.setLineDash(lost ? [2, 3] : [4, 3]);
+        g.beginPath();
+        st.route.forEach(([rx, rz], k) => {
+          const [x, y] = this.toMap(rx, rz);
+          if (k === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        });
+        g.stroke();
+        g.setLineDash([]);
+        if (st.cut && !lost) {
+          const [x, y] = this.toMap(st.cutX, st.cutZ);
+          g.strokeStyle = '#fff';
+          g.lineWidth = 2;
+          g.beginPath();
+          g.moveTo(x - 3, y - 3);
+          g.lineTo(x + 3, y + 3);
+          g.moveTo(x + 3, y - 3);
+          g.lineTo(x - 3, y + 3);
+          g.stroke();
+        }
+      }
+    }
     // 糧道：輜重車
     for (const wg of w.wagons) {
       if (!wg.alive || wg.arrived) continue;

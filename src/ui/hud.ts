@@ -157,8 +157,8 @@ export class Hud {
     const sup = el('div', 'supply');
     for (let t = 0; t < 2; t++) {
       const row = el('div', 'row');
-      row.innerHTML = `<span class="lb" style="color:${w.teams[t].color}">${FACTIONS[sc.teams[t].faction].flag}</span><span class="st">🍚充足</span><div class="bar"><i style="width:100%;background:linear-gradient(#ffe39a,#d19a2a)"></i></div>`;
-      row.title = t === 0 ? '我軍糧況（本陣存糧）' : '敵軍糧況（本陣存糧）';
+      row.innerHTML = `<span class="lb" style="color:${w.teams[t].color}">${FACTIONS[sc.teams[t].faction].flag}</span><span class="st">🍚糧道暢通</span><div class="bar"><i style="width:100%;background:linear-gradient(#ffe39a,#d19a2a)"></i></div>`;
+      row.title = t === 0 ? '我軍糧道與本陣存糧：糧道被斷後存糧開始倒數，吃緊、斷糧時士氣低落、受到傷害變重' : '敵軍糧道與本陣存糧：派兵站上敵軍糧道（附近沒有敵軍）8 秒即可切斷';
       sup.appendChild(row);
       this.supplyRows.push(row);
     }
@@ -317,12 +317,11 @@ export class Hud {
   private stateIcons(r: Regiment): string {
     const t = this.b.world.teams[r.team];
     let s = '';
-    if (r.state === 'shattered') s += '💀';
-    else if (r.routing) s += '🏳';
-    else if (r.engagedWith.size > 0) s += '⚔';
-    else if (r.wavering) s += '⚠';
-    if (t.supply !== 'ok' && !r.routing) s += SUPPLY_EFFECTS[t.supply].icon;
-    if (t.panicUntil > this.b.world.t && !r.routing) s += '😱';
+    const sup = this.b.world.supplyOf(r);
+    if (r.engagedWith.size > 0) s += '⚔';
+    else if (r.morale < RULES.lowThreshold) s += '⚠';
+    if (sup !== 'ok') s += SUPPLY_EFFECTS[sup].icon;
+    if (t.panicUntil > this.b.world.t) s += '😱';
     if (r.terrain.high) s += '⛰';
     if (r.terrain.forest) s += '🌲';
     if (r.terrain.wet) s += '🌊';
@@ -341,11 +340,15 @@ export class Hud {
     if (r.terrain.wet && r.engagedWith.size > 0) return '半渡！';
     if (r.stamina < 25 && !r.unit.mounted) return '疲憊';
     if (r.ranged && r.members.length && r.members.every((i) => w.s.ammo[i] <= 0)) return '箭盡';
+    const sup = w.supplyOf(r);
+    if (sup === 'starving') return '斷糧';
+    if (sup === 'low') return '吃緊';
+    if (r.morale < RULES.brokenThreshold) return '瓦解';
     return '';
   }
 
   private moraleColor(m: number): string {
-    return m >= RULES.highThreshold ? '#5fe0ff' : m >= RULES.waverThreshold ? '#6ee25a' : m >= RULES.routThreshold ? '#ffc24a' : '#ff5a45';
+    return m >= RULES.highThreshold ? '#5fe0ff' : m >= RULES.lowThreshold ? '#6ee25a' : m >= RULES.brokenThreshold ? '#ffc24a' : '#ff5a45';
   }
 
   private updateCards(): void {
@@ -506,9 +509,12 @@ export class Hud {
       return;
     }
     const t = w.teams[r.team];
-    const sup = SUPPLY_EFFECTS[t.supply];
-    const st = r.state === 'shattered' ? '潰散' : r.routing ? '潰逃' : r.morale >= RULES.highThreshold ? '高昂' : r.morale >= RULES.waverThreshold ? '穩定' : '動搖';
-    const stColor = r.routing ? '#ff6a55' : r.morale >= RULES.highThreshold ? '#5fe0ff' : r.morale >= RULES.waverThreshold ? '#9cff7a' : '#ffc24a';
+    const supState = w.supplyOf(r);
+    const sup = SUPPLY_EFFECTS[supState];
+    const st = r.morale >= RULES.highThreshold ? '高昂（攻擊 +10%）' : r.morale >= RULES.lowThreshold ? '穩定' : r.morale >= RULES.brokenThreshold ? '低落（受傷 +15%）' : '瓦解（受傷 +30%）';
+    const stColor = this.moraleColor(r.morale);
+    const supNote = supState === 'ok' ? '' : supState === 'cut' ? '本陣存糧倒數中' : `攻擊 −${Math.round((1 - sup.atk) * 100)}%、受傷 +${Math.round((sup.taken - 1) * 100)}%`;
+    const outNote = r.outT > RULES.outLowSec ? '（深入敵境太久）' : '';
     const terr: string[] = [];
     const tr = r.terrain;
     if (tr.high) terr.push(`⛰ 高地${tr.relHeight > 1 ? ` +${tr.relHeight.toFixed(0)}m（近戰 +${Math.round(Math.min(RULES.heightMax, tr.relHeight * RULES.heightPerMeter) * 100)}%）` : ''}`);
@@ -526,13 +532,13 @@ export class Hud {
     this.infoEl.className = `reginfo${r.team !== w.player ? ' enemy' : ''}`;
     this.infoEl.innerHTML = `<div class="hd"><b>${r.name}</b><span>${r.unit.name}</span></div>
       <div class="row"><span>兵力</span><b>${fmt(r.alive * MEN_PER_SOLDIER)}</b><small>／${fmt(r.initial * MEN_PER_SOLDIER)}</small></div>
-      <div class="row"><span>士氣</span><b style="color:${stColor}">${Math.round(r.morale)} ${st}</b>${r.routs ? `<small>潰逃 ${r.routs} 次</small>` : ''}</div>
+      <div class="row"><span>士氣</span><b style="color:${stColor}">${Math.round(r.morale)} ${st}</b></div>
       <div class="row"><span>體力</span><b>${Math.round(r.stamina)}</b>${r.stamina < 30 ? '<small style="color:#ffc24a">疲憊：攻防 −15%</small>' : ''}</div>
       ${ammo >= 0 ? `<div class="row"><span>箭矢</span><b>${ammo.toFixed(0)}</b><small>輪</small></div>` : ''}
       <div class="row"><span>陣型</span><b>${forms[r.formation]}</b>${r.hold ? '<small>🛡 堅守</small>' : ''}${r.run ? '<small>🏃 奔跑</small>' : ''}</div>
-      <div class="row"><span>糧況</span><b>${sup.icon}${sup.name}</b>${t.panicUntil > w.t ? '<small style="color:#ff6a55">😱 軍心大亂</small>' : ''}</div>
+      <div class="row"><span>糧況</span><b>${sup.icon}${sup.name}${outNote}</b>${supNote ? `<small style="color:#ffc24a">${supNote}</small>` : ''}${t.panicUntil > w.t ? '<small style="color:#ff6a55">😱 軍心大亂</small>' : ''}</div>
       ${terr.length ? `<div class="row t">${terr.join('<br>')}</div>` : ''}
-      ${gen ? `<div class="row t">⭐ ${gen.name}（武${gen.war} 統${gen.lead} 智${gen.int}）${r.general!.alive ? '' : r.general!.fled ? '<b style="color:#ffc24a">逃脫</b>' : '<b style="color:#ff6a55">陣亡</b>'}</div>` : ''}
+      ${gen ? `<div class="row t">⭐ ${gen.name}（武${gen.war} 統${gen.lead} 智${gen.int}）${r.general!.alive ? '' : r.general!.fled ? '<b style="color:#ffc24a">已撤退</b>' : '<b style="color:#ff6a55">陣亡</b>'}</div>` : ''}
       ${buffs.length ? `<div class="row t">✨ ${buffs.join('、')}</div>` : ''}`;
   }
 
@@ -872,9 +878,25 @@ export class Hud {
       case 'supply': {
         const t = w.teams[ev.team];
         const e = SUPPLY_EFFECTS[ev.state];
-        if (ev.state === 'ok') break;
-        const desc = ev.state === 'starving' ? '攻擊 −30%、防禦 −20%、移動 −20%，動搖部隊開始逃亡' : '攻擊 −10%、體力回復變慢、士氣上限 75';
+        if (ev.state === 'ok' || ev.state === 'cut') break;
+        const desc = ev.state === 'starving' ? '攻擊 −20%、受到傷害 +35%、移動變慢、士兵開始離隊' : '攻擊 −10%、受到傷害 +15%、士氣上限 70';
         this.toast(`${e.icon} ${t.name}${e.name}！${desc}`, mine(ev.team) ? 'bad' : 'good', true);
+        break;
+      }
+      case 'lineCut': {
+        const t = w.teams[ev.team];
+        const how = ev.burnt ? '糧倉被焚，補給斷絕' : '補給路線被敵軍切斷';
+        this.toast(mine(ev.team) ? `⚠️ 我軍糧道被斷！${how}，全軍士氣 −10，本陣存糧開始倒數` : `🔥 ${t.name}糧道已斷！${how}，敵軍存糧開始倒數`, mine(ev.team) ? 'bad' : 'gold', true, at(ev.x, ev.z));
+        break;
+      }
+      case 'lineRestored': {
+        const t = w.teams[ev.team];
+        this.toast(mine(ev.team) ? '🍚 糧道恢復暢通，本陣重新進糧' : `${t.name}糧道恢復了`, mine(ev.team) ? 'good' : 'bad');
+        break;
+      }
+      case 'generalRetreat': {
+        const r = w.regs[ev.reg];
+        this.toast(mine(r.team) ? `我軍武將${ev.name}重傷撤退！所屬部隊士氣 −25` : `敵將${ev.name}撤退！`, mine(r.team) ? 'bad' : 'gold', true, at(r.mx, r.mz));
         break;
       }
       case 'duel': {
@@ -961,7 +983,7 @@ export class Hud {
         <div><b>${fmt(me.initialStrength * MEN_PER_SOLDIER)}</b>我軍出征</div>
         <div><b>${fmt(me.dead * MEN_PER_SOLDIER)}</b>我軍陣亡</div>
         <div><b>${fmt(en.dead * MEN_PER_SOLDIER)}</b>斬首敵軍</div>
-        <div><b>${fmt(en.fled * MEN_PER_SOLDIER)}</b>敵軍逃散</div>
+        <div><b>${me.generalsBeaten}</b>逼退／斬殺敵將</div>
         <div><b>${en.depotsBurnt}</b>焚敵糧倉</div>
         <div><b>${Math.floor(dur / 60)}:${String(Math.floor(dur % 60)).padStart(2, '0')}</b>戰鬥時間</div>
       </div>

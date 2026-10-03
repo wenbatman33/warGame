@@ -89,8 +89,8 @@ export const CHIBI: Scenario = {
         { type: 'archer', x: -80, z: 115, name: '江東弓手' },
         { type: 'archer', x: 30, z: 115, name: '火弓營' },
         { type: 'archer', x: 140, z: 130, name: '水軍弓手' },
-        { type: 'crossbow', x: -170, z: 95, name: '江東弩營' },
-        { type: 'lightcav', x: 220, z: 120, name: '劉備騎兵' },
+        { type: 'archer', x: -170, z: 95, name: '江東弩營' },
+        { type: 'cav', x: 220, z: 120, name: '劉備騎兵' },
       ],
     },
     {
@@ -107,10 +107,10 @@ export const CHIBI: Scenario = {
         ...campRow.map((x, i) => ({ type: (i % 3 === 1 ? 'spear' : 'sword') as 'spear' | 'sword', x, z: -25 + (i % 2) * 18, morale: 52, name: `第${'一二三四五六'[i]}營守軍` })),
         { type: 'archer', x: -100, z: -75, morale: 52 },
         { type: 'archer', x: 60, z: -75, morale: 52 },
-        { type: 'crossbow', x: -20, z: -90, morale: 55 },
-        { type: 'halberd', x: 20, z: -130, morale: 60, name: '北軍精銳' },
-        { type: 'lightcav', x: -250, z: -90, morale: 58 },
-        { type: 'heavycav', x: 230, z: -100, morale: 70, name: '虎豹騎' },
+        { type: 'archer', x: -20, z: -90, morale: 55 },
+        { type: 'spear', x: 20, z: -130, morale: 60, name: '北軍精銳' },
+        { type: 'cav', x: -250, z: -90, morale: 58 },
+        { type: 'cav', x: 230, z: -100, morale: 70, name: '虎豹騎' },
         { type: 'spear', x: -170, z: -205, role: 'guard', morale: 55, name: '糧營守軍' },
       ],
     },
@@ -137,8 +137,12 @@ export const CHIBI: Scenario = {
       c.ignite = 1;
       c.fire = 0.9;
       w.events.push({ k: 'ignite', s: c.id });
-      // 營中守軍被大火驚潰
-      for (const r of w.regs) if (r.team === 1 && !r.gone && Math.hypot(r.mx - c.x, r.mz - c.z) < 45) w.rout(r);
+      // 營中守軍被大火燒得大亂：士氣重挫、死傷
+      for (const r of w.regs) {
+        if (r.team !== 1 || r.gone || Math.hypot(r.mx - c.x, r.mz - c.z) >= 45) continue;
+        r.morale = Math.min(r.morale, 20);
+        for (const i of r.members.slice(0, Math.floor(r.alive * 0.25))) if (!w.s.general[i]) w.damage(i, 9999, -1);
+      }
     }
     w.events.push({ k: 'msg', text: '東風起！黃蓋火船直衝曹營', tone: 'gold' });
   },

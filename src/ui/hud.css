@@ -46,13 +46,14 @@
 .btn.green { background: linear-gradient(#8ee65a, #4fae28); }
 .btn.red { background: linear-gradient(#f2735c, #b8361f); }
 .btn.dis { filter: grayscale(1) brightness(0.6); }
-.supply { background: var(--panel); border: 2px solid #000; border-radius: 10px; padding: 5px 8px; min-width: 196px; }
+.supply { background: var(--panel); border: 2px solid #000; border-radius: 10px; padding: 5px 8px; min-width: 220px; }
 .supply .row { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 900; color: #fff; margin: 2px 0; }
 .supply .row .lb { width: 30px; }
-.supply .row .st { width: 54px; }
+.supply .row .st { width: 78px; white-space: nowrap; }
 .supply .row .bar { flex: 1; height: 8px; }
 .supply .row.starving .st { color: #ff6a55; animation: blink 0.8s infinite; }
 .supply .row.low .st { color: #ffc24a; }
+.supply .row.cut .st { color: #ff9a3a; animation: blink 1.4s infinite; }
 @keyframes blink { 50% { opacity: 0.35; } }
 .cmdpts { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 2px solid #000; border-radius: 10px; padding: 4px 8px; }
 .cmdpts .n { font-weight: 900; color: #e7b6ff; font-size: 15px; min-width: 44px; }

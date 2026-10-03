@@ -42,7 +42,7 @@ export interface TeamSpec {
   regiments: RegimentSpec[];
   /** 部署區（矩形，中心＋寬深） */
   deploy?: { x: number; z: number; w: number; d: number };
-  /** 主帥（陣亡＝全軍重挫；commanderLoss=true 時直接戰敗） */
+  /** 主帥：撤退或陣亡＝全軍敗退（commanderLoss: false 可關掉，例如教學關） */
   commander?: GeneralId;
   commanderLoss?: boolean;
   /** AI 戰略 */

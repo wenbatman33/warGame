@@ -111,6 +111,10 @@ export class Regiment {
   kills = 0;
   /** 在己方本陣補給範圍內（補箭、體力回復加快） */
   inSupply = false;
+  /** 深入敵境、遠離己方糧道的累積秒數（遠征斷糧） */
+  outT = 0;
+  /** 撤退中的武將（單人隊伍，回到本陣即離場） */
+  retreatHome = false;
   ai: { role: AiRole; anchorX: number; anchorZ: number; waitUntil: number; homeX: number; homeZ: number; targetT: number } = {
     role: 'line',
     anchorX: 0,
@@ -126,7 +130,7 @@ export class Regiment {
   fixed = false;
   /** 10 秒內重大傷亡的驚嚇已觸發 */
   flagsHeavy = false;
-  /** 由 DEV 或劇本設定：不會潰逃 */
+  /** 由 DEV 或劇本設定：武將不會撤退 */
   unbreakable = false;
 
   constructor(id: number, team: number, faction: FactionId, unit: UnitDef, name: string) {

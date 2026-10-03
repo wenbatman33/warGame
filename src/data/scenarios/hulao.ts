@@ -81,7 +81,7 @@ export const HULAO: Scenario = {
         { type: 'spear', x: 80, z: 105 },
         { type: 'archer', x: -30, z: 150 },
         { type: 'archer', x: 30, z: 150 },
-        { type: 'heavycav', x: 80, z: 140, name: '聯軍鐵騎' },
+        { type: 'cav', x: 80, z: 140, name: '聯軍鐵騎' },
       ],
     },
     {
@@ -96,15 +96,15 @@ export const HULAO: Scenario = {
         { type: 'guard', x: 0, z: -70, general: 'lvbu', name: '呂布并州鐵騎', morale: 95 },
         { type: 'guard', x: -60, z: -90, general: 'huaxiong' },
         { type: 'guard', x: 60, z: -95, general: 'zhangliao', name: '張遼（呂布麾下）' },
-        { type: 'heavycav', x: -40, z: -110, name: '西涼鐵騎' },
-        { type: 'heavycav', x: 40, z: -110, name: '西涼鐵騎' },
-        { type: 'horsearcher', x: -80, z: -120, name: '西涼騎射' },
-        { type: 'horsearcher', x: 80, z: -120, name: '西涼騎射' },
-        { type: 'halberd', x: 0, z: -130 },
+        { type: 'cav', x: -40, z: -110, name: '西涼鐵騎' },
+        { type: 'cav', x: 40, z: -110, name: '西涼鐵騎' },
+        { type: 'cav', x: -80, z: -120, name: '西涼騎射' },
+        { type: 'cav', x: 80, z: -120, name: '西涼騎射' },
+        { type: 'spear', x: 0, z: -130 },
         { type: 'sword', x: -40, z: -150 },
         { type: 'sword', x: 40, z: -150 },
         { type: 'archer', x: 0, z: -170 },
-        { type: 'crossbow', x: -30, z: -200, role: 'guard', name: '關上弩手' },
+        { type: 'archer', x: -30, z: -200, role: 'guard', name: '關上弩手' },
       ],
     },
   ],
@@ -131,11 +131,9 @@ export const HULAO: Scenario = {
       run: (w) => {
         const lv = w.regs.find((r) => r.general?.id === 'lvbu')!;
         w.flags.sanying = true;
-        w.s.hp[lv.general!.soldier] *= 0.4;
         lv.morale -= 35;
-        // 呂布撥馬回關：直接潰走離場，不再參戰
-        lv.routs = 99;
-        w.rout(lv);
+        // 呂布撥馬回關：武將撤退離場，親衛失去主將
+        w.retreatGeneral(lv);
         for (const r of w.regs) if (!r.gone) r.morale = r.team === 0 ? Math.min(100, r.morale + 15) : r.morale - 10;
         w.events.push({ k: 'msg', text: '三英戰呂布！呂布力戰不支，撥馬回關', tone: 'gold' });
       },

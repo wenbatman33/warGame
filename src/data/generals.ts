@@ -42,7 +42,7 @@ export type GeneralId =
   | 'fazheng';
 
 export type AbilityId =
-  | 'rally' // 號令：範圍士氣＋、潰兵重整
+  | 'rally' // 號令：範圍士氣大增
   | 'berserk' // 親衛攻擊大增、防禦下降
   | 'terror' // 範圍敵軍士氣重挫＋自身加速
   | 'peerless' // 天下無雙：範圍士氣重挫＋攻擊大增
@@ -66,7 +66,7 @@ export interface AbilityDef {
 }
 
 export const ABILITIES: Record<AbilityId, AbilityDef> = {
-  rally: { id: 'rally', name: '號令全軍', cd: 90, desc: '120 m 內友軍士氣 +30，潰逃中的軍團立刻重整' },
+  rally: { id: 'rally', name: '號令全軍', cd: 90, desc: '120 m 內友軍士氣 +30（士氣高＝攻擊高、受傷少）' },
   berserk: { id: 'berserk', name: '虎痴裸衣', cd: 60, desc: '20 秒內親衛攻擊 ×1.6、防禦 ×0.7' },
   terror: { id: 'terror', name: '威震逍遙', cd: 75, desc: '35 m 內敵軍士氣 −35；親衛速度 +30%，15 秒' },
   peerless: { id: 'peerless', name: '天下無雙', cd: 70, desc: '30 m 內敵軍士氣 −25；親衛攻擊 ×1.5、速度 +15%，15 秒' },

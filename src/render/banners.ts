@@ -1,4 +1,4 @@
-// 軍旗：每個軍團由一名掌旗兵舉著勢力大旗（武將軍團用姓氏大旗）；潰逃時旗倒
+// 軍旗：每個軍團由一名掌旗兵舉著勢力大旗（武將軍團用姓氏大旗）；撤離戰場時旗倒
 import * as THREE from 'three';
 import { FACTIONS } from '../data/factions';
 import { buildBanner } from '../models/props';

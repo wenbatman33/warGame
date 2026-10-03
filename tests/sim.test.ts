@@ -65,7 +65,7 @@ describe('尋路', () => {
 });
 
 describe('戰鬥與士氣', () => {
-  it('兩軍對撞會有傷亡，弱勢方最終潰逃', () => {
+  it('兩軍對撞會有傷亡，弱勢方被殲滅', () => {
     const sc = scenario(
       flat(),
       [
@@ -90,6 +90,22 @@ describe('戰鬥與士氣', () => {
     expect(w.winner).toBe(0);
   });
 
+  it('士兵不會潰逃：士氣歸零也照樣作戰', () => {
+    const sc = scenario(flat(), [{ type: 'sword', x: 0, z: 20, facing: 180 }], [{ type: 'sword', x: 0, z: -20, facing: 0 }]);
+    const w = new World(sc, generateHeightfield(sc.map));
+    w.started = true;
+    w.commandAttack([0], 1);
+    for (let k = 0; k < 30 * 20; k++) {
+      w.regs[1].morale = 0;
+      w.step();
+      w.events = [];
+    }
+    expect(w.regs[1].routing).toBe(false);
+    expect(w.regs[1].alive).toBeGreaterThan(0);
+    // 士氣瓦解：受到傷害 ×1.2
+    expect(w.takenMul(w.regs[1])).toBeCloseTo(1.2, 3);
+  });
+
   it('高地有近戰加成', () => {
     const sc = scenario(flat(), [{ type: 'sword', x: 0, z: 0 }], [{ type: 'sword', x: 0, z: -50 }]);
     const w = new World(sc, generateHeightfield(sc.map));
@@ -99,10 +115,28 @@ describe('戰鬥與士氣', () => {
   });
 });
 
-describe('武將單挑', () => {
-  it('兩軍武將相遇會單挑，武力高者勝', () => {
+describe('武將', () => {
+  it('主帥重傷撤退＝全軍敗退；士兵留下', () => {
+    const sc = scenario(flat(), [{ type: 'guard', x: 0, z: 60, general: 'guanyu' }], [{ type: 'guard', x: 0, z: -60, general: 'yanliang' }]);
+    sc.teams[1].commander = 'yanliang';
+    const w = new World(sc, generateHeightfield(sc.map));
+    w.started = true;
+    const r = w.regs[1];
+    const gi = r.general!.soldier;
+    const before = r.alive;
+    // 親衛還在時武將受傷減半：打掉八成血需要 1.6 倍傷害
+    w.damage(gi, w.s.maxHp[gi] * 1.6, -1);
+    expect(r.general!.alive).toBe(false);
+    expect(r.general!.fled).toBe(true);
+    expect(r.alive).toBe(before - 1);
+    expect(w.over).toBe(true);
+    expect(w.winner).toBe(0);
+  });
+
+  it('史實單挑：劇本指定的兩位武將相遇才會單挑', () => {
     const sc = scenario(flat(), [{ type: 'guard', x: 0, z: 4, general: 'guanyu', facing: 180 }], [{ type: 'guard', x: 0, z: -4, general: 'yanliang', facing: 0 }]);
     const w = new World(sc, generateHeightfield(sc.map));
+    w.duelFate = (a, b) => (a === 'guanyu' || b === 'guanyu' ? { winner: 'guanyu', killed: true } : null);
     w.started = true;
     // 兩位武將直接放到 3 m 內
     const ga = w.regs[0].general!.soldier;
@@ -118,6 +152,7 @@ describe('武將單挑', () => {
       w.events = [];
     }
     expect(duel).not.toBeNull();
+    expect(duel!.winner).toBe('關羽');
   });
 });
 
@@ -134,13 +169,42 @@ describe('糧草', () => {
     expect(w.teams[1].supply).not.toBe('ok');
   });
 
-  it('本陣存糧耗盡 → 斷糧', () => {
-    const sc = scenario(flat(), [{ type: 'sword', x: -100, z: 100 }], [{ type: 'sword', x: 100, z: -100 }], true);
+  it('糧道暢通時本陣會補糧，不會斷糧', () => {
+    const sc = scenario(flat(), [{ type: 'sword', x: -150, z: 100 }], [{ type: 'sword', x: 150, z: -100 }], true);
     const w = new World(sc, generateHeightfield(sc.map));
     w.started = true;
     w.teams[1].hq!.stock = 1;
     for (let k = 0; k < 61; k++) w.step();
+    expect(w.teams[1].supply).toBe('ok');
+    expect(w.teams[1].hq!.stock).toBeGreaterThan(1);
+  });
+
+  it('敵軍站上糧道 8 秒 → 切斷 → 存糧耗盡斷糧；趕走後恢復', () => {
+    // 糧倉 (160,-60) → 本陣 (0,-170)：佔住路線中段
+    const sc = scenario(flat(), [{ type: 'sword', x: 80, z: -115, count: 40 }], [{ type: 'sword', x: 150, z: 100 }], true);
+    sc.teams[1].depots = [{ x: 160, z: -60, stock: 500 }];
+    const w = new World(sc, generateHeightfield(sc.map));
+    w.started = true;
+    const depot = w.teams[1].depots[0];
+    expect(depot.route.length).toBeGreaterThan(2);
+    for (let k = 0; k < 30 * 10; k++) {
+      w.step();
+      w.events = [];
+    }
+    expect(depot.cut).toBe(true);
+    expect(w.teams[1].lineOk).toBe(false);
+    w.teams[1].hq!.stock = 1;
+    for (let k = 0; k < 61; k++) w.step();
     expect(w.teams[1].supply).toBe('starving');
+    // 斷糧：受到傷害 ×1.35
+    expect(w.takenMul(w.regs[1])).toBeGreaterThanOrEqual(1.35);
+    // 佔糧道的部隊離開 → 恢復
+    for (const i of w.regs[0].members) w.s.x[i] += 200;
+    w.regs[0].cx += 200;
+    w.commandHalt([0]);
+    for (let k = 0; k < 61; k++) w.step();
+    expect(depot.cut).toBe(false);
+    expect(w.teams[1].supply).toBe('ok');
   });
 });
 

@@ -26,6 +26,13 @@ export class Structure {
   gate = 0;
   /** 原始擁有者（水源易主判斷用） */
   readonly owner: number;
+  /** 糧道：此補給點到本陣的路線（約每 6 m 一點；本陣自己沒有） */
+  route: [number, number][] = [];
+  /** 糧道被敵軍佔住的累積秒數、是否已切斷、切斷點 */
+  cutT = 0;
+  cut = false;
+  cutX = 0;
+  cutZ = 0;
 
   constructor(id: number, kind: StructKind, team: number, x: number, z: number, stock: number, main: boolean, name: string) {
     this.id = id;

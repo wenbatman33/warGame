@@ -20,7 +20,7 @@ export interface CustomOptions {
 
 export const CUSTOM_DEFAULT: CustomOptions = { terrain: 'river', player: 'wei', enemy: 'wu', mySize: 10, enemySize: 10, depots: true, time: 'day', difficulty: 'normal', weather: 'clear' };
 
-const COMPOSITION: UnitTypeId[] = ['sword', 'spear', 'archer', 'sword', 'lightcav', 'spear', 'crossbow', 'heavycav', 'sword', 'archer', 'halberd', 'horsearcher', 'spear', 'lightcav', 'sword', 'archer', 'crossbow', 'heavycav', 'sword'];
+const COMPOSITION: UnitTypeId[] = ['sword', 'spear', 'archer', 'sword', 'cav', 'spear', 'archer', 'cav', 'sword', 'archer', 'spear', 'cav', 'spear', 'cav', 'sword', 'archer', 'archer', 'cav', 'sword'];
 
 function generalsOf(f: FactionId): GeneralId[] {
   return (Object.keys(GENERALS) as GeneralId[]).filter((g) => GENERALS[g].faction === f && GENERALS[g].ability);
@@ -36,9 +36,9 @@ function army(f: FactionId, size: number, side: 1 | -1, rnd: () => number): Regi
   if (gens[1] && size >= 8) out.push({ type: 'guard', x: side * 120, z: z0 + side * 20, general: gens[1], facing });
   const n = size - out.length;
   const comp = COMPOSITION.slice(0, n);
-  const inf = comp.filter((t) => !['archer', 'crossbow', 'lightcav', 'heavycav', 'horsearcher'].includes(t));
-  const rng = comp.filter((t) => t === 'archer' || t === 'crossbow');
-  const cav = comp.filter((t) => t === 'lightcav' || t === 'heavycav' || t === 'horsearcher');
+  const inf = comp.filter((t) => t === 'sword' || t === 'spear');
+  const rng = comp.filter((t) => t === 'archer');
+  const cav = comp.filter((t) => t === 'cav');
   const spread = (list: UnitTypeId[], z: number, gap: number) =>
     list.forEach((t, k) => out.push({ type: t, x: (k - (list.length - 1) / 2) * gap + (rnd() - 0.5) * 6, z, facing }));
   spread(inf, z0, 30);

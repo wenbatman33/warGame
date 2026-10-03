@@ -1,4 +1,4 @@
-// 平衡測試（BALANCE=1 npx vitest run tests/balance.test.ts）：量測各種對戰的潰逃時間與傷亡
+// 平衡測試（BALANCE=1 npx vitest run tests/balance.test.ts）：量測各種對戰的消耗速度與傷亡（沒有潰逃）
 import { describe, it } from 'vitest';
 import type { RegimentSpec, Scenario } from '../src/data/scenario';
 import { generateHeightfield } from '../src/map/mapgen';
@@ -31,17 +31,19 @@ function fight(name: string, a: RegimentSpec[], b: RegimentSpec[], orders: (w: W
   const w = new World(sc, generateHeightfield(sc.map));
   w.started = true;
   orders(w);
-  const firstRout: string[] = [];
   let contact = -1;
+  let at60 = '';
   for (let k = 0; k < maxT * 30 && !w.over; k++) {
     w.step();
-    for (const ev of w.events) if (ev.k === 'rout' && firstRout.length < 3) firstRout.push(`${w.regs[ev.reg].team}:${w.regs[ev.reg].name}@${w.t.toFixed(0)}`);
     w.events = [];
     if (contact < 0 && w.regs.some((r) => r.engagedWith.size > 0)) contact = w.t;
+    if (contact >= 0 && !at60 && w.t - contact >= 60) at60 = `接戰 60 秒：甲 −${pct(w, 0)}% 乙 −${pct(w, 1)}%`;
   }
-  const lossA = w.teams[0].dead;
-  const lossB = w.teams[1].dead;
-  console.log(`${name}: 接戰 ${contact.toFixed(0)}s 結束 ${w.t.toFixed(0)}s 勝方 ${w.winner} 甲陣亡 ${lossA}/${w.teams[0].initialStrength} 乙陣亡 ${lossB}/${w.teams[1].initialStrength} 首潰 ${firstRout.join(' ')}`);
+  console.log(`${name}: 接戰 ${contact.toFixed(0)}s 結束 ${w.t.toFixed(0)}s 勝方 ${w.winner}｜${at60}｜最終 甲 −${pct(w, 0)}% 乙 −${pct(w, 1)}%`);
+}
+
+function pct(w: World, t: number): string {
+  return ((w.teams[t].dead / w.teams[t].initialStrength) * 100).toFixed(0);
 }
 
 describe.runIf(RUN)('平衡', () => {
@@ -51,18 +53,18 @@ describe.runIf(RUN)('平衡', () => {
   it('刀盾 vs 長槍', () => {
     fight('刀盾對長槍', [{ type: 'sword', x: 0, z: 30 }], [{ type: 'spear', x: 0, z: -30 }], (w) => w.commandAttack([0], 1));
   });
-  it('重騎正面衝 長槍（堅守）', () => {
-    fight('重騎衝堅守長槍', [{ type: 'heavycav', x: 0, z: 120 }], [{ type: 'spear', x: 0, z: -10, hold: true }], (w) => w.commandAttack([0], 1));
+  it('騎兵正面衝 長槍（堅守）', () => {
+    fight('騎兵衝堅守長槍', [{ type: 'cav', x: 0, z: 120 }], [{ type: 'spear', x: 0, z: -10, hold: true }], (w) => w.commandAttack([0], 1));
   });
-  it('重騎正面衝 刀盾', () => {
-    fight('重騎衝刀盾', [{ type: 'heavycav', x: 0, z: 120 }], [{ type: 'sword', x: 0, z: -10 }], (w) => w.commandAttack([0], 1));
+  it('騎兵正面衝 刀盾', () => {
+    fight('騎兵正面衝刀盾', [{ type: 'cav', x: 0, z: 120 }], [{ type: 'sword', x: 0, z: -10 }], (w) => w.commandAttack([0], 1));
   });
-  it('刀盾交戰中，重騎背襲', () => {
+  it('刀盾交戰中，騎兵背襲', () => {
     fight(
       '夾擊',
       [
         { type: 'sword', x: 0, z: 25 },
-        { type: 'heavycav', x: 0, z: -150, facing: 180 },
+        { type: 'cav', x: 0, z: -150, facing: 180 },
       ],
       [{ type: 'sword', x: 0, z: -25 }],
       (w) => {
@@ -76,6 +78,26 @@ describe.runIf(RUN)('平衡', () => {
   });
   it('弓兵射擊長槍', () => {
     fight('弓射長槍', [{ type: 'archer', x: 0, z: 60 }], [{ type: 'spear', x: 0, z: -60, hold: true }], (w) => w.commandAttack([0], 1), 120);
+  });
+  it('兵種相剋：長槍 vs 騎兵', () => {
+    fight('長槍對騎兵', [{ type: 'spear', x: 0, z: 30, count: 60 }], [{ type: 'cav', x: 0, z: -30 }], (w) => w.commandAttack([1], 0), 180);
+  });
+  it('兵種相剋：騎兵 vs 弓兵（近身）', () => {
+    fight('騎兵對弓兵', [{ type: 'cav', x: 0, z: 30 }], [{ type: 'archer', x: 0, z: -30, count: 60 }], (w) => w.commandAttack([0], 1), 180);
+  });
+  it('側擊：刀盾＋刀盾側翼 vs 刀盾', () => {
+    fight(
+      '側擊',
+      [
+        { type: 'sword', x: 0, z: 25 },
+        { type: 'sword', x: 80, z: -25, facing: 270 },
+      ],
+      [{ type: 'sword', x: 0, z: -25 }],
+      (w) => {
+        w.commandAttack([0], 2);
+        w.commandAttack([1], 2);
+      },
+    );
   });
   it('3 團 vs 3 團混合', () => {
     fight(
@@ -98,23 +120,35 @@ describe.runIf(RUN)('平衡', () => {
       },
     );
   });
-  it('官渡：守河岸＋輕騎燒烏巢', () => {
-    const sc = GUANDU;
+  it('官渡：守河岸＋騎兵燒烏巢', () => {
+    const sc = { ...GUANDU, teams: GUANDU.teams.map((t) => ({ ...t, ai: t.ai ? { ...t.ai } : undefined })) as Scenario['teams'] };
     const w = new World(sc, generateHeightfield(sc.map));
+    w.setDifficulty('normal');
     const ai = new AiCommander(w, 1, sc.teams[1].ai!, 'normal');
+    // 前線：防守 AI 指揮（會支援、轉向）；奇兵：照劇本燒烏巢
+    const me = new AiCommander(w, 0, { plan: 'defend', raid: false, startDelay: 0 }, 'normal');
     w.started = true;
     w.flags.startT = 0;
     const raid = w.regs.filter((r) => r.team === 0 && (r.name.startsWith('輕騎') || r.name === '許褚虎衛')).map((r) => r.id);
-    const xs = [-150, -90, -30, 30, 90, -60, 60, -120, 0];
-    w.regs.filter((r) => r.team === 0 && !raid.includes(r.id) && !r.general).forEach((r, k) => {
-      w.commandMove([r.id], xs[k % xs.length], r.ranged ? 45 : 22, Math.PI);
-      r.hold = !r.ranged;
-    });
     const wu = w.structs.find((s) => s.name === '烏巢')!;
+    for (const id of raid) {
+      w.regs[id].ai.role = 'hold';
+      w.regs[id].ai.homeX = wu.x;
+      w.regs[id].ai.homeZ = wu.z;
+    }
+    const spots: Record<string, [number, number]> = { 青州兵: [-12, 26], 中軍刀盾: [24, 26], 長槍營: [-48, 34], 右翼長槍: [60, 34], 弓手營: [-20, 58], 強弓營: [24, 58], 弩營: [2, 74], 虎豹騎: [-110, 70] };
+    for (const r of w.regs.filter((x) => x.team === 0 && !raid.includes(x.id) && !x.general)) {
+      const p = spots[r.name];
+      if (!p) continue;
+      w.commandMove([r.id], p[0], p[1], Math.PI);
+      r.ai.homeX = p[0];
+      r.ai.homeZ = p[1];
+    }
     const step = (sec: number) => {
-      for (let k = 0; k < sec * 30; k++) {
+      for (let k = 0; k < sec * 30 && !w.over; k++) {
         w.step();
         ai.update();
+        me.update();
         w.events = [];
       }
     };
@@ -122,11 +156,15 @@ describe.runIf(RUN)('平衡', () => {
     step(30);
     w.commandMove(raid, 280, -60, undefined, undefined, true);
     step(30);
-    w.commandAttackStruct(raid, wu.id);
     const log: string[] = [];
-    for (let k = 0; k < 20 && !w.over; k++) {
+    for (let k = 0; k < 40 && !w.over; k++) {
+      // 奇兵附近沒有敵軍就去縱火
+      const near = w.regs.some((e) => e.team === 1 && !e.gone && raid.some((id) => Math.hypot(e.mx - w.regs[id].mx, e.mz - w.regs[id].mz) < 35));
+      if (!wu.burnt && !near) w.commandAttackStruct(raid, wu.id);
       step(15);
-      log.push(`t=${w.t.toFixed(0)} 烏巢=${wu.burnt ? '焚毀' : wu.fire.toFixed(2)} 袁糧=${w.teams[1].supply} 士氣 曹${w.armyMorale(0).toFixed(0)} 袁${w.armyMorale(1).toFixed(0)} 陣亡 ${w.teams[0].dead}/${w.teams[1].dead}`);
+      const rs = raid.map((id) => w.regs[id]).map((r) => `${r.name.slice(0, 2)}${r.alive}`).join(' ');
+      const guard = w.regs.filter((r) => r.team === 1 && r.ai.role === 'guard').map((r) => `${r.name.slice(0, 3)}${r.alive}`).join(' ');
+      log.push(`t=${w.t.toFixed(0)} 奇兵[${rs}] 守軍[${guard}] 烏巢=${wu.burnt ? '焚毀' : `火${wu.fire.toFixed(2)}點${wu.ignite.toFixed(2)}`} 袁糧=${w.teams[1].supply} 存糧${((w.teams[1].hq?.frac ?? 0) * 100).toFixed(0)}% 士氣 曹${w.armyMorale(0).toFixed(0)} 袁${w.armyMorale(1).toFixed(0)} 傷亡 曹${pct(w, 0)}% 袁${pct(w, 1)}%${w.over ? ` 結束 勝=${w.winner}` : ''}`);
     }
     console.log(log.join('\n'));
   });

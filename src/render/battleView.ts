@@ -14,6 +14,7 @@ import { ArrowRenderer } from './arrows';
 import { Rain } from './weather';
 import { Banners } from './banners';
 import { Overlays } from './overlays';
+import { SupplyLines } from './supplyLines';
 import { Particles } from './particles';
 import { LOD, SoldierRenderer } from './soldiers';
 import { LIGHT, Stage, type Quality } from './stage';
@@ -32,6 +33,7 @@ export class BattleView {
   readonly stage: Stage;
   readonly soldiers: SoldierRenderer;
   readonly overlays: Overlays;
+  readonly supplyLines: SupplyLines;
   readonly particles = new Particles();
   private arrows: ArrowRenderer;
   private banners: Banners;
@@ -138,6 +140,8 @@ export class BattleView {
     this.stage.scene.add(this.banners.group);
     this.overlays = new Overlays(world);
     this.stage.scene.add(this.overlays.group);
+    this.supplyLines = new SupplyLines(world);
+    this.stage.scene.add(this.supplyLines.group);
     this.stage.scene.add(this.particles.group);
     this.particles.resize(innerHeight);
     addEventListener('resize', this.onResize);
@@ -364,6 +368,7 @@ export class BattleView {
       if (!paused && (st.fire > 0 || st.burnt)) this.fireFx(sv, dt);
     }
     if (!paused) this.particles.update(dt);
+    this.supplyLines.update(paused ? 0 : dt);
     if (this.rain) {
       const c = this.stage.camera.position;
       const t = new THREE.Vector3();

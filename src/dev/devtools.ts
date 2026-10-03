@@ -185,9 +185,13 @@ function build(getBattle: () => Battle | null): GUI {
       const w = getBattle()?.world;
       if (w?.teams[0].hq) w.teams[0].hq.stock = 0;
     },
-    敵軍全線潰逃: () => {
+    敵將全部撤退: () => {
       const w = getBattle()?.world;
-      if (w) for (const r of w.regs) if (r.team !== w.player && !r.gone && !r.routing) w.rout(r);
+      if (w) for (const r of w.regs) if (r.team !== w.player && r.general?.alive) w.retreatGeneral(r);
+    },
+    敵軍糧道切斷: () => {
+      const w = getBattle()?.world;
+      if (w) for (const st of w.structs) if (st.team !== w.player && st.route.length) st.cut = true;
     },
     勝利結算: () => getBattle()?.world.finish(0),
     失敗結算: () => getBattle()?.world.finish(1),
